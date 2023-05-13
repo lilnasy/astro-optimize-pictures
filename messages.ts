@@ -104,5 +104,14 @@ export default {
         "fr-FR":
             "Utilisez les touches haut et bas pour déplacer le curseur, l'espace pour sélectionner ou désélectionner une image ou un dossier, et entrée pour continuer."
         
+    },
+    "AlreadyOptimized": {
+
+        "en-US":
+            "Skipping {path}. It has already been optimized into {count} versions.",
+
+        "fr-FR":
+            "Passer {path}. Il a déjà été optimisé en {count} versions."
+
     }
 } as const

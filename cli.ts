@@ -4,15 +4,15 @@
 import app                 from './app.ts'
 import constants           from './constants.ts'
 import messages            from './messages.ts'
-import Deferred            from './deferred.ts'     
 import * as CantContinue   from './cant continue.ts'
 import {
+    style,
+    lineBreak,
     print,
     selectOneOf,
     selectPaths,
     selectEncodingOptions,
-    renderFsTreeFromPaths,
-style
+    renderFsTreeFromPaths
 }                          from './terminal.ts'
 import { path }            from './deps.ts'
 
@@ -22,10 +22,10 @@ import type { HOT }                          from './deps.ts'
 
 /***** TYPES *****/
 
-type Messages = typeof messages
-type ReadyFun = AppOptions['ready']
-type ShowFun  = AppOptions['show']
-type ExitFun  = AppOptions['exit']
+type Messages  = typeof messages
+type ReadyFun  = AppOptions['ready']
+type ReportFun = AppOptions['report']
+type ShowFun   = AppOptions['show']
 
 /**
  * Creates a deep copy of a given value using the structured clone algorithm.
@@ -75,77 +75,10 @@ type Mutable<A> = {
 /***** ENTRYPOINT *****/
 
 const cwd = Deno.cwd()
-await app({ cwd , ready, show, exit })
+await app({ cwd , ready, report, show })
 
 
 /***** IMPLEMENTATION *****/
-
-show satisfies ShowFun
-async function show(
-    optimizationProgress : Parameters<ShowFun>[0]
-) : Promise<void> {
-    if (optimizationProgress instanceof Error) {
-        const { path, command, output } = optimizationProgress
-        const failedToParseMessage = message('CouldntParseImageInfo', { path, command, output })
-        print([ failedToParseMessage ])
-        return
-    }
-    if ('progress' in optimizationProgress) {
-        const { previouslyTranscoded, transcodingTargets, progress, sourcePath } = optimizationProgress
-        const completedTranscodes: boolean[] = Array(transcodingTargets.length).fill(false)
-        const { size } = await Deno.stat(sourcePath)
-
-        let transcodingComplete = new Deferred<void>
-
-        await progress.pipeTo(new WritableStream({
-            async write(transcodeTask) {
-                if (transcodeTask instanceof Error) {
-                    const { errorLine, command, fullLog } = transcodeTask;
-                    
-                    (async () => {
-                        const [ tempFile, log ] = await Promise.all([Deno.makeTempFile({ suffix: '.txt' }), fullLog])
-                        await Deno.writeTextFile(tempFile, log)
-                        print([ 'Full error log for ' + path.relative(cwd, sourcePath) + ' written to ' + tempFile ])
-                    })()
-                    
-                    const failedToTranscodeMessage = message('CouldntTranscodeImage', {
-                        path   : style.blue(sourcePath),
-                        command: style.yellow(command),
-                        output : style.red(errorLine)
-                    })
-                    return print([ failedToTranscodeMessage ])
-                }
-
-                const { destinationPath, fullLog } = transcodeTask
-
-                const i = transcodingTargets.findIndex(({ path }) => path === destinationPath)
-                completedTranscodes[i] = true
-
-                transcodingComplete.then(() => {
-                    Deno.stat(destinationPath)
-                    .then(({ size: targetSize }) => {
-                        print([destinationPath + 'target size succesfully statted: ' + style.green(String(targetSize))])
-                    })
-                    .catch(error => {
-                        print([destinationPath + 'failed to stat target size: ' + style.red(error.message)])
-                    })
-                })
-
-                const optimizationMessage = 'optimized ' + path.relative(cwd, sourcePath) + ' to ' + style.green(path.relative(cwd, destinationPath))
-                print([ optimizationMessage ])
-            },
-            close() {
-                transcodingComplete.resolve()
-            }
-        }))
-    }
-    else {
-        const { previouslyTranscoded, sourcePath } = optimizationProgress
-        const message = 'already optimized ' + path.relative(cwd, sourcePath) + ' to ' + previouslyTranscoded.length + ' variants'
-        return print([ message ])
-    }
-
-} /* implements ShowFun */
 
 ready satisfies ReadyFun
 async function ready(
@@ -210,50 +143,129 @@ async function ready(
         options = await selectEncodingOptions('Configure', options)
         return menu()
     }
-} /* implements ReadyFun */
+}
 
-exit satisfies ExitFun
-async function exit(
-    cantContinue : Parameters<ExitFun>[0]
-) {
+report satisfies ReportFun
+async function report(
+    cantContinue : Parameters<ReportFun>[0]
+) : Promise<void> {
     const { projectName } = constants
     
     if (cantContinue instanceof CantContinue.CouldntFindAstroConfigFile) {
         const checkedPaths = cantContinue.checkedPaths.map((path, i) => ' ' + String(i + 1) + ') ' + path).join('\n')
-        const exitMessage = message('CouldntFindAstroConfigFile', { checkedPaths })
-        print([ exitMessage ])
-        return Deno.exit()
+        print([
+            message('CouldntFindAstroConfigFile', { checkedPaths }),
+            lineBreak()
+        ])
     }
 
     if (cantContinue instanceof CantContinue.CouldntConnectToInternet) {
         const { error, url } = cantContinue
-        const exitMessage = message('CouldntConnectToInternet', { url, message: error.message })
-        print([ exitMessage ])
-        return Deno.exit()
+        print([
+            message('CouldntConnectToInternet', {
+                url,
+                message: style.red(error.message)
+            }),
+            lineBreak()
+        ])
     }
 
     if (cantContinue instanceof CantContinue.CouldntDownloadFfmpeg) {
-        const response = await serializeResponse(cantContinue.response)
-        const exitMessage = message('CouldntDownloadFfmpeg', { projectName, response })
-        print([ exitMessage ])
-        return Deno.exit()
+        print([
+            message('CouldntDownloadFfmpeg', {
+                projectName,
+                response: await serializeResponse(cantContinue.response)
+            }),
+            lineBreak()
+        ])
     }
 
     if (cantContinue instanceof CantContinue.CouldntWriteFfmpegToDisk) {
-        const error = String(cantContinue.error)
-        const exitMessage = message('CouldntWriteFfmpegToDisk', { projectName, error })
-        print([ exitMessage ])
-        return Deno.exit()
+        print([
+            message('CouldntWriteFfmpegToDisk', {
+                projectName,
+                error : style.red(cantContinue.error.message)
+            }),
+            lineBreak()
+        ])
     }
 
-    const exitMessage =
-        Object.entries(cantContinue)
-        .map(([ key, value ]) => `${key}: ${value}`)
-        .join('\n')
+    if (cantContinue instanceof CantContinue.CouldntParseImageInfo) {
+        const { path, command, output } = cantContinue
+        print([
+            message('CouldntParseImageInfo', { path, command, output }),
+            lineBreak()
+        ])
+    }
+
+    if (cantContinue instanceof CantContinue.CouldntTranscodeImage) {
+        const { errorLine, command, sourcePath } = cantContinue
+                    
+        // (async () => {
+        //     const [ tempFile, log ] = await Promise.all([Deno.makeTempFile({ suffix: '.txt' }), fullLog])
+        //     await Deno.writeTextFile(tempFile, log)
+        //     print([ 'Full error log for ' + path.relative(cwd, sourcePath) + ' written to ' + tempFile ])
+        // })()
+
+        print([
+            message('CouldntTranscodeImage', {
+                path   : style.blue(sourcePath),
+                command: style.yellow(command),
+                output : style.red(errorLine)
+            }),
+            lineBreak()
+        ])
+    }
+    throw new Error('report() called with invalid arguments', { cause: arguments })
+}
+
+show satisfies ShowFun
+async function show(
+    optimizationProgress : Parameters<ShowFun>[0]
+) : Promise<void> {
     
-    print([ exitMessage ])
-    Deno.exit()
-} /* implements ExitFun */
+    if ('progress' in optimizationProgress)
+        return await showUnderwayOptimization(optimizationProgress)
+
+    else
+        return showCachedOptimization(optimizationProgress)
+}
+
+async function showUnderwayOptimization({
+    sourcePath,
+    progress,
+    // previouslyTranscoded,
+    // transcodingTargets
+} : Extract<Parameters<ShowFun>[0], { progress: unknown }>) {
+    await progress.pipeTo(new WritableStream({
+        write({ destinationPath }) {
+            const optimizationMessage =
+                'optimized ' +
+                path.relative(cwd, sourcePath) +
+                ' to ' +
+                style.green(path.relative(cwd, destinationPath))
+            print([ optimizationMessage ])
+        },
+        close() {
+            // print a table of all the targets with an indicator of file size saved
+        }
+    }))
+}
+
+function showCachedOptimization({
+    sourcePath,
+    previouslyTranscoded,
+} : Exclude<Parameters<ShowFun>[0], { progress: unknown } | Error>) {    
+    print([
+        message('AlreadyOptimized', {
+            path : sourcePath,
+            count: String(previouslyTranscoded.length)
+        })
+    ])
+}
+
+
+/***** TYPED MESSAGE TEMPLATES *****/
 
 function message<Topic extends keyof Messages>(
     topic   : Topic,
@@ -289,9 +301,9 @@ type Variables<Template> =
     HOT.Pipe<
         Template,
         [
-            HOT.Strings.Split<"{">,
+            HOT.Strings.Split<'{'>,
             HOT.Tuples.Tail,
-            HOT.Tuples.Map<HOT.Strings.Split<"}">>,
+            HOT.Tuples.Map<HOT.Strings.Split<'}'>>,
             HOT.Tuples.Map<HOT.Tuples.Head>,
             HOT.Tuples.ToUnion
         ]

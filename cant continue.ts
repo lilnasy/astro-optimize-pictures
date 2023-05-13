@@ -43,6 +43,7 @@ export class CouldntWriteFfmpegToDisk extends Error {
 export class CouldntTranscodeImage extends Error {
     constructor(
         readonly command    : string,
+        readonly sourcePath : string,
         readonly errorLine  : string,
         readonly fullLog    : PromiseLike<string>
     ) { super() }

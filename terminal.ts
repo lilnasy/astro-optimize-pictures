@@ -60,6 +60,10 @@ function styler() {
     })
 }
 
+function lineBreak() {
+    return box.line.horizontal.normal.repeat(Deno.consoleSize().columns - 1)
+}
+
 
 /***** PRINT TO TERMINAL *****/
 
@@ -68,7 +72,6 @@ let previewing: string[] | undefined
 function print(lines : string[]) {
     staticText.clear()
     staticText.outputItems(lines)
-    staticText.outputItems([box.line.horizontal.normal.repeat(Deno.consoleSize().columns - 1)])
     if (previewing !== undefined) staticText.set(previewing)
 }
 
@@ -462,7 +465,7 @@ async function selectEncodingOptions(
 
 const stop = Symbol()
 onKeyPress.stop = stop
-export async function onKeyPress(
+async function onKeyPress(
     handlers: Record<string, typeof stop | (() => unknown)>
 ) {
     handlers.return ??= stop
@@ -473,6 +476,19 @@ export async function onKeyPress(
         if (handler === undefined)    continue
         if (handler === stop)         return stop
         if (await handler() === stop) return stop
+        /* ^ Awaiting here allows a child onKeyPress to            */
+        /* exclusively respond to the key presses.                 */
+        /*                                                         */
+        /* When the child loop exits and returns stop, it will be  */
+        /* passed up the chain, and the parents will break their   */
+        /* loops as well.                                          */
+        /*                                                         */
+        /* The alternative would be that the user press enter once */
+        /* for each loop they somehow entered.                     */
+        /*                                                         */
+        /* For this to happen, however, it is important that the   */
+        /* key-press callback return the result of the child       */
+        /* onKeyProcess; it should not be a void function.         */
     }
     return stop
 }
@@ -609,4 +625,4 @@ function toggle<Key extends string | number | symbol>(
 
 /***** EXPORTS *****/
 
-export { selectOneOf, selectMultipleOf, selectPaths, selectEncodingOptions, formatTable, renderFsTreeFromPaths, style, print, preview, clear }
+export { style, lineBreak, print, preview, clear, onKeyPress, selectOneOf, selectMultipleOf, selectPaths, selectEncodingOptions, /* formatTable, */ renderFsTreeFromPaths }
