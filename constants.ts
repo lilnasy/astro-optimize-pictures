@@ -23,10 +23,10 @@ export default {
             { width: 2560, enabled: false },
             { width: 3840, enabled: false }
         ],
-        formats: [
-            { format: 'jpeg', enabled: true, codec: 'mjpeg'     , quality : 10, minimum: 2, maximum: 31  },
-            { format: 'webp', enabled: true, codec: 'libwebp'   , quality : 40, minimum: 0, maximum: 100 },
-            { format: 'avif', enabled: true, codec: 'libaom-av1', quality : 25, minimum: 0, maximum: 63  }
-        ]
+        formats: {
+            jpeg: { enabled: true, codec: 'mjpeg'     , quality : 10, minimum: 2, maximum: 31  },
+            webp: { enabled: true, codec: 'libwebp'   , quality : 40, minimum: 0, maximum: 100 },
+            avif: { enabled: true, codec: 'libaom-av1', quality : 25, minimum: 0, maximum: 63  }
+        }
     }
 } as const

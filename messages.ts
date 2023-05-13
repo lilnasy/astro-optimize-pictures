@@ -96,6 +96,15 @@ export default {
             "Changer la qualité et les résolutions"
         
     },
+    "Exit": {
+
+        "en-US":
+            "Exit",
+        
+        "fr-FR":
+            "Sortie"
+        
+    },
     "Interaction instructions": {
         
         "en-US":
@@ -108,10 +117,10 @@ export default {
     "AlreadyOptimized": {
 
         "en-US":
-            "Skipping {path}. It has already been optimized into {count} versions.",
+            "Skipping {path}.\nIt has already been optimized into {count} versions.",
 
         "fr-FR":
-            "Passer {path}. Il a déjà été optimisé en {count} versions."
+            "Passer {path}.\nIl a déjà été optimisé en {count} versions."
 
     }
 } as const

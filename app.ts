@@ -157,35 +157,34 @@ async function parseImageInfo(
 type Optimization = CachedOptimization | UnderwayOptimization
 
 interface CachedOptimization {
-    sourcePath           : string
     previouslyTranscoded : TranscodeTask[]
+    sourcePath           : string
 }
 
 interface UnderwayOptimization extends CachedOptimization {
-    transcodingTargets : TranscodeTask[]
     progress           : ReadableStream<Pick<TranscodeTask, 'destinationPath'>>
+    transcodingTargets : TranscodeTask[]
 }
 
 interface TranscodeTask {
-    width           : number
     codec           : string
-    quality         : number
     destinationPath : string
-    format : 'jpeg' | 'webp' | 'avif' 
+    format          : 'jpeg' | 'webp' | 'avif' 
+    quality         : number
+    width           : number
 }
 
 export interface TranscodeOptions {
-    widths : Array<{
-        width   : number
-        enabled : boolean
-    }>
-    formats : Array<{
-        format  : 'jpeg' | 'webp' | 'avif'
+    formats : Record<'jpeg' | 'webp' | 'avif', {
         enabled : boolean
         codec   : string
         quality : number
         minimum : number
         maximum : number
+    }>
+    widths : Array<{
+        width   : number
+        enabled : boolean
     }>
 }
 
@@ -204,9 +203,11 @@ async function optimizeImage(
     
     const _targets =
         widths.flatMap(width =>
-            options.formats
-            .filter(({ enabled }) => enabled)
-            .map(async ({ codec, format, quality }) => {
+            Object.keys(options.formats)
+            .filter(format => options.formats[format as 'jpeg'].enabled)
+            .map(async format_ => {
+                const format = format_ as keyof typeof options.formats
+                const { codec, quality } = options.formats[format]
                 const destinationPath = destinationPathFromImageInfo(source.path, format, width, quality)
                 const exists = await fs.exists(destinationPath)
                 await fs.ensureDir(path.dirname(destinationPath))

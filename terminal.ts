@@ -38,20 +38,42 @@ const box = {
 const style = styler()
 
 function styler() {
-    type Classes = typeof classes[number]
-    type Styler = { (text : string) : string } & { [_ in Classes] : Styler }
+
+    type Style = typeof styles[number]
+
+    type Classes =
+        | Style[]
+        | { [_ in Style] ?: boolean }
     
-    const classes = ['bgBlack', 'bgBlue', 'bgBrightBlack', 'bgBrightBlue', 'bgBrightCyan', 'bgBrightGreen', 'bgBrightMagenta', 'bgBrightRed', 'bgBrightWhite', 'bgBrightYellow', 'bgCyan', 'bgGreen', 'bgMagenta', 'bgRed', 'bgWhite', 'bgYellow', 'black', 'blue', 'bold', 'brightBlack', 'brightBlue', 'brightCyan', 'brightGreen', 'brightMagenta', 'brightRed', 'brightWhite', 'brightYellow', 'cyan', 'dim', 'gray', 'green', 'hidden', 'inverse', 'italic', 'magenta', 'red', 'reset', 'strikethrough', 'stripColor', 'underline', 'white', 'yellow'] as const
+    type Styler = {
+        (text : string, classes ?: Classes) : string
+    } & {
+        [_ in Style] : Styler
+    }
+    
+    const styles = ['bgBlack', 'bgBlue', 'bgBrightBlack', 'bgBrightBlue', 'bgBrightCyan', 'bgBrightGreen', 'bgBrightMagenta', 'bgBrightRed', 'bgBrightWhite', 'bgBrightYellow', 'bgCyan', 'bgGreen', 'bgMagenta', 'bgRed', 'bgWhite', 'bgYellow', 'black', 'blue', 'bold', 'brightBlack', 'brightBlue', 'brightCyan', 'brightGreen', 'brightMagenta', 'brightRed', 'brightWhite', 'brightYellow', 'cyan', 'dim', 'gray', 'green', 'hidden', 'inverse', 'italic', 'magenta', 'red', 'reset', 'strikethrough', 'stripColor', 'underline', 'white', 'yellow'] as const
     const id = (x => x) as Styler
     
-    let stylesToApply = new Array<Classes>
+    let stylesToApply = new Array<Style>
 
     return new Proxy(id, {
-        get(_, property : Classes, receiver) {
-            if (classes.includes(property)) stylesToApply.push(property)
+        get(_, property : Style, receiver) {
+            if (styles.includes(property)) stylesToApply.push(property)
             return receiver
         },
-        apply(_, __, [ text ] : [ string ]) {
+        apply(_, __, [ text, classes ] : [ string, Classes | undefined ]) {
+            if (Array.isArray(classes))
+                classes.forEach(c => {
+                    if (styles.includes(c))
+                        stylesToApply.push(c)
+                })
+
+            else if (typeof classes === 'object')
+                Object.keys(classes).forEach(key => {
+                    if (classes[key as Style] && styles.includes(key as Style))
+                        stylesToApply.push(key as Style)
+                })
+            
             let styledText = text
             stylesToApply.forEach(s => styledText = colors[s](styledText))
             stylesToApply = []
@@ -149,8 +171,8 @@ async function selectOneOf(
     function render(_?: unknown) {
         let output = '\n'
         options.forEach((option, i) => {
-            if (selected === i) output += ` ◉ ${style.inverse(option)}\n`
-            else                output += style.dim(` ◎ ${option}\n`)
+            if (selected === i) output += ` ◉  ${style.inverse(option)}\n`
+            else                output += style.dim(`  ◎ ${option}\n`)
         })
         output += '\n'
         preview([ prompt, output ])
@@ -330,45 +352,31 @@ async function selectPaths(
     }
 }
 
-type Immutable<A> = {
-    readonly [Key in keyof A]: Immutable<A[Key]>
-}
-
 async function selectEncodingOptions(
     prompt  : string,
-    options : Immutable<TranscodeOptions>
+    options : TranscodeOptions
 ) : Promise<TranscodeOptions> {
 
-    const selectedWidths  = options.widths.map(({ enabled }) => enabled)
-    const selectedFormats = options.formats.map(({ enabled }) => enabled)
-    const qualities       = options.formats.map(({ quality }) => quality)
-    
     let focused : 'widths' | 'formats' | 'qualities'
     let focusedWidth   = 0
-    let focusedFormat  = 0
-    let focusedQuality = 0
+    let focusedFormat  : keyof typeof options.formats = 'jpeg'
+    let focusedQuality : keyof typeof options.formats = 'jpeg'
 
     hideCursor()
     render()
     await selectWidths()
     clear()
     showCursor()
-    return {
-        widths : options.widths.filter((_, i) => selectedWidths[i]),
-        formats:
-            options.formats
-            .filter((_, i) => selectedFormats[i])
-            .map(({ ...format }, i) => ({ ...format, quality: qualities[i] }))
-    }
+    return options
 
     function selectWidths(): Promise<unknown> {
         render(focused = 'widths')
         return onKeyPress({
             left  : () => render(focusedWidth = Math.max(0, focusedWidth - 1)),
-            right : () => render(focusedWidth = Math.min(selectedWidths.length - 1, focusedWidth + 1)),
+            right : () => render(focusedWidth = Math.min(options.widths.length - 1, focusedWidth + 1)),
             down  : selectFormats,
-            space : () => render(toggle(selectedWidths, focusedWidth)),
-            delete: () => render(selectedWidths[focusedWidth] = false),
+            space : () => render(toggle(options.widths[focusedWidth], 'enabled')),
+            delete: () => render(options.widths[focusedWidth].enabled = false),
         })
     }
 
@@ -376,11 +384,11 @@ async function selectEncodingOptions(
         render(focused = 'formats')
         return onKeyPress({
             up    : selectWidths,
-            left  : () => render(focusedFormat = Math.max(0, focusedFormat - 1)),
-            right : () => render(focusedFormat = Math.min(options.formats.length, focusedFormat + 1)),
+            left  : () => render(focusedFormat = focusedFormat === 'avif' ? 'webp' : 'jpeg'),
+            right : () => render(focusedFormat = focusedFormat === 'jpeg' ? 'webp' : 'avif'),
             down  : selectQualities,
-            space : () => render(toggle(selectedFormats, focusedFormat)),
-            delete: () => render(selectedFormats[focusedFormat] = false)
+            space : () => render(toggle(options.formats[focusedFormat], 'enabled')),
+            delete: () => render(options.formats[focusedFormat].enabled = false)
         })
     }
 
@@ -388,24 +396,22 @@ async function selectEncodingOptions(
         render(focused = 'qualities')
         return onKeyPress({
             up: () => {
-                if (focusedQuality === 0) return selectFormats()
-                else return render(focusedQuality -= 1)
+                if (focusedQuality === 'jpeg') return selectFormats()
+                else return render(focusedQuality = focusedQuality === 'avif' ? 'webp' : 'jpeg')
             },
             left: () => {
-                const curQuality = qualities[focusedQuality]
-                const minQuality = options.formats[focusedQuality].minimum
-                const newQuality = Math.max(minQuality, curQuality - 1)
-                return render(qualities[focusedQuality] = newQuality)
+                const { quality, minimum } = options.formats[focusedQuality]
+                const newQuality = Math.max(minimum, quality - 1)
+                return render(options.formats[focusedQuality].quality = newQuality)
             },
             right: () => {
-                const curQuality = qualities[focusedQuality]
-                const maxQuality = options.formats[focusedQuality].maximum
-                const newQuality = Math.min(maxQuality, curQuality + 1)
-                return render(qualities[focusedQuality] = newQuality)
+                const { quality, maximum } = options.formats[focusedQuality]
+                const newQuality = Math.min(maximum, quality + 1)
+                return render(options.formats[focusedQuality].quality = newQuality)
             },
             down: () => {
-                if (focusedQuality === options.formats.length - 1) return
-                else return render(focusedQuality += 1)
+                if (focusedQuality === 'avif') return
+                else return render(focusedQuality = focusedQuality === 'jpeg' ? 'webp' : 'avif')
             },
         })
     }
@@ -415,34 +421,34 @@ async function selectEncodingOptions(
         let output = '\n'
 
         const widthsTitle = (focused === 'widths'  ? style.bold.underline : style.bold)('widths')
-        const widthsBody = options.widths.map(({ width }, i) => {
-            const selected = selectedWidths[i]
-            const widthStyle =
-                focused === 'widths' && focusedWidth === i && !selected ? style.inverse.strikethrough :
-                focused === 'widths' && focusedWidth === i &&  selected ? style.inverse :
-                                                              !selected ? style.dim.strikethrough : style
-            
-            return (selected ? '✓ ' : '✗ ') + widthStyle(String(width).padEnd(4))
+        const widthsBody = options.widths.map(({ width , enabled }, i) => {
+            const classes = {
+                dim          : !enabled && (focused !== 'widths' || focusedWidth !== i),
+                strikethrough: !enabled,
+                inverse      : focused === 'widths' && focusedWidth === i
+            }
+            return (enabled ? '✓ ' : '✗ ') + style(String(width).padEnd(4), classes)
         })
         output += widthsTitle + '\n    ' + widthsBody.join('    ') + '\n\n'
 
         const formatsTitle = (focused === 'formats' ? style.bold.underline : style.bold)('formats')
-        const formatsBody = options.formats.map(({ format }, i) => {
-            const enabled = selectedFormats[i]
-            const formatStyle =
-                focused === 'formats' && focusedFormat === i && !enabled ? style.inverse.strikethrough :
-                focused === 'formats' && focusedFormat === i &&  enabled ? style.inverse :
-                                                                !enabled ? style.dim.strikethrough : style
-            
-            return (enabled ? '✓ ' : '✗ ') + formatStyle(format)
+        const formatsBody  = Object.keys(options.formats).map(format_ => {
+            const format  = format_ as keyof typeof options.formats
+            const enabled = options.formats[format].enabled
+            const classes = {
+                inverse      : focused === 'formats' && focusedFormat === format,
+                strikethrough: !enabled,
+                dim          : !enabled && (focused !== 'formats' || focusedFormat !== format)
+            }
+            return (enabled ? '✓ ' : '✗ ') + style(format, classes)
         })
         output += formatsTitle + '\n    ' + formatsBody.join('    ') + '\n\n'
         
         const qualitiesTitle = (focused === 'qualities' ? style.bold.underline : style.bold)('qualities')
-        const qualitiesBody = options.formats.map(({ format }, i) => {
-            const selected = selectedFormats[i]
-            const quality = qualities[i]
-            const focusedOnFormat = focused === 'qualities' && focusedQuality === i
+        const qualitiesBody  = Object.keys(options.formats).map(format_ => {
+            const format = format_ as keyof typeof options.formats
+            const { enabled, quality, minimum, maximum } = options.formats[format]
+            const focusedOnFormat = focused === 'qualities' && focusedQuality === format
             const qualityTitle = (focusedOnFormat ? style.underline : style)(format)
             const qualityText  = (focusedOnFormat ? style.inverse   : style)(String(quality))
 
@@ -450,12 +456,17 @@ async function selectEncodingOptions(
                 focusedOnFormat === false
                     ? '   ' + qualityText
                     : (
-                        (quality === options.formats[i].minimum ? '◁  ' : '◀  ') +
+                        (quality === minimum ? '◁  ' : '◀  ') +
                         qualityText +
-                        (quality === options.formats[i].maximum ? '  ▷' : '  ▶')
+                        (quality === maximum ? '  ▷' : '  ▶')
                     )
             
-            return (selected ? style : style.dim.strikethrough)(qualityTitle + ' ' + qualityControls)
+            const classes = {
+                dim          : !enabled && (focused !== 'qualities' || focusedQuality !== format),
+                strikethrough: !enabled
+            }
+            
+            return style(qualityTitle + ' ' + qualityControls, classes)
         })
         output += qualitiesTitle + '\n    ' + qualitiesBody.join('\n    ') + '\n\n'
 
@@ -483,8 +494,8 @@ async function onKeyPress(
         /* passed up the chain, and the parents will break their   */
         /* loops as well.                                          */
         /*                                                         */
-        /* The alternative would be that the user press enter once */
-        /* for each loop they somehow entered.                     */
+        /* The alternative would be that the user press enter      */
+        /* several times to exit.                                  */
         /*                                                         */
         /* For this to happen, however, it is important that the   */
         /* key-press callback return the result of the child       */
@@ -502,7 +513,7 @@ interface TableFormatOptions {
     maxWidth : number
 }
 
-function formatTable(
+function renderTable(
     data : Array<Array<string>>,
     {
         border   = 'normal',
@@ -519,11 +530,14 @@ function formatTable(
             const rowLines = row.map((entry, i) => splitAtMaxWidth(entry, usableColumnWidths[i]))
             const rowHeight = padding * 2 + rowLines.reduce((max, lines) => lines.length > max ? lines.length : max, 0)
             const paddedLines =
-                rowLines.map((lines, i) => [
-                    ...Array.from({ length: Math.floor((rowHeight - lines.length) / 2) }, _ => ' '.repeat(usableColumnWidths[i] + 2 * padding)),
-                    ...lines.map(line => ' '.repeat(padding) + line.padEnd(usableColumnWidths[i]) + ' '.repeat(padding)),
-                    ...Array.from({ length: Math.ceil((rowHeight - lines.length) / 2) }, _ => ' '.repeat(usableColumnWidths[i] + 2 * padding))
-                ])
+                rowLines.map((lines, i) => 
+                    Array.from({ length: Math.floor((rowHeight - lines.length) / 2) }, _ => ' '.repeat(usableColumnWidths[i] + 2 * padding))
+                    .concat(
+                        lines.map(line => ' '.repeat(padding) + line + ' '.repeat(usableColumnWidths[i] - colors.stripColor(line).length) + ' '.repeat(padding))
+                    ).concat(
+                        Array.from({ length: Math.ceil((rowHeight - lines.length) / 2) }, _ => ' '.repeat(usableColumnWidths[i] + 2 * padding))
+                    )
+                )
             return paddedLines
         })
     
@@ -597,7 +611,10 @@ function splitAtMaxWidth(
         const [ firstLine, ...rest ] = input.split('\n')
         return splitAtMaxWidth(rest.join('\n'), maxWidth, [ ...chunks, ...splitAtMaxWidth(firstLine, maxWidth) ])
     }
-    if (input.length <= maxWidth) return [ ...chunks, input ]
+
+    if (colors.stripColor(input).length <= maxWidth)
+        return [ ...chunks, input ]
+    
     const chunk = input.slice(0, maxWidth)
     const rest = input.slice(maxWidth)
     return splitAtMaxWidth(rest, maxWidth, [ ...chunks, chunk ])
@@ -605,12 +622,17 @@ function splitAtMaxWidth(
 
 function columnWidths(
     data : Array<Array<string>>,
-    widths = data.at(0)?.map(cell => cell.length)
+    widths = data.at(0)?.map(_ => 0)
 ) : Array<number> {
     if (widths === undefined) return []
-    const [ first, ...rest ] = data
-    if (first === undefined) return widths
-    return columnWidths(rest, widths.map((width, i) => first[i].length > width ? first[i].length : width))
+    const [ currentRow, ...rest ] = data
+    if (currentRow === undefined) return widths
+    const updatedWidths = widths.map((incumbentLargestWidthInColumn, i) => {
+        const cell = currentRow[i]
+        const cellWidth = Math.max(...cell.split('\n').map(line => colors.stripColor(line).length))
+        return Math.max(cellWidth, incumbentLargestWidthInColumn)
+    })
+    return columnWidths(rest, updatedWidths)
 }
 
 /***** UTILITY FUNCTIONS *****/
@@ -625,4 +647,4 @@ function toggle<Key extends string | number | symbol>(
 
 /***** EXPORTS *****/
 
-export { style, lineBreak, print, preview, clear, onKeyPress, selectOneOf, selectMultipleOf, selectPaths, selectEncodingOptions, /* formatTable, */ renderFsTreeFromPaths }
+export { style, lineBreak, print, preview, clear, onKeyPress, selectOneOf, selectMultipleOf, selectPaths, selectEncodingOptions, renderTable, renderFsTreeFromPaths }
