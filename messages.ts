@@ -19,10 +19,10 @@ export default {
     "CouldntFindAstroConfigFile": {
         
         "en-US":
-            "Could not find astro configuration file after looking at these paths:\n{checkedPaths}\n\nIs your current working directory inside your project?",
+            "Could not find astro configuration file after looking at these paths:\n{checkedPaths}\n\nAre you running this command inside your project?",
         
         "fr-FR":
-            "Impossible de trouver le fichier de configuration astro après avoir examiné ces chemins:\n{checkedPaths}\n\nVotre répertoire de travail actuel est-il à l'intérieur de votre projet?"
+            "Impossible de trouver le fichier de configuration astro après avoir examiné ces chemins:\n{checkedPaths}\n\nExécutez-vous cette commande à l'intérieur de votre projet?"
         
     },
     "CouldntParseImageInfo": {
@@ -36,10 +36,10 @@ export default {
     "CouldntTranscodeImage": {
         
         "en-US":
-            "Transcoding {path} failed.\n\nThe full command run was:\n{command}\n\nffmpeg's output was:\n{output}",
+            "Transcoding {path} failed.\n\nThe full command run was:\n{command}\n\nffmpeg's output was:\n{output}\n\nComplete log written to {logWrittenTo}.",
         
         "fr-FR":
-            "Transcodage de {path} a échoué.\n\nLa commande complète exécutée était:\n{command}\n\nLa sortie de ffmpeg était:\n{output}"
+            "Transcodage de {path} a échoué.\n\nLa commande complète exécutée était:\n{command}\n\nLa sortie de ffmpeg était:\n{output}\n\nJournal complet écrit à {logWrittenTo}."
         
     },
     "CouldntWriteFfmpegToDisk": {

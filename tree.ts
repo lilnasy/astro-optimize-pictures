@@ -19,7 +19,7 @@ function parents(
     tree : Node
 ) {
     const parents = new Set<Node>()
-    walk(tree, (_, leaf, __, parent) => {
+    walk(tree, (_, leaf, parent) => {
         if (isLeaf(leaf)) parents.add(parent)
     })
     return parents
@@ -66,7 +66,7 @@ function everyLeaf(
     callback : (leaf: Leaf, parent : Node) => boolean
 ) {
     let result = true
-    walk(tree, (_, value, __, parent) => {
+    walk(tree, (_, value, parent) => {
         result = result && (isNode(value) || callback(value, parent))
     })
     return result
@@ -77,7 +77,7 @@ function someLeaves(
     callback : (leaf: Leaf, parent : Node) => boolean
 ) {
     let result = false
-    walk(tree, (_, value, __, parent) => {
+    walk(tree, (_, value, parent) => {
         result = result || (isLeaf(value) && callback(value, parent))
     })
     return result
@@ -121,14 +121,15 @@ function clone(tree : Node) : Node {
 
 function walk(
     tree: Node, 
-    callback: (key : string, value : Node | Leaf, index : number, parent : Node) => void
+    callback: (key : string, value : Node | Leaf, parent : Node, depth : number) => void,
+    depth = 0
 ) {
     const keys = Object.keys(tree)
     for (let i = 0; i < keys.length; i++) {
         const key = keys[i]
         const value = tree[key]
-        callback(key, value, i, tree)
-        if (isNode(value)) walk(value, callback)
+        callback(key, value, tree, depth)
+        if (isNode(value)) walk(value, callback, depth + 1)
     }
 }
 
@@ -156,9 +157,7 @@ function simplify(
     root     : Node,
     joinWith : string
 ) {
-    const keys = Object.keys(root)
-    for (let i = 0; i < keys.length; i++) {
-        const key = keys[i]
+    for (const key in root) {
         const value = root[key]
         if (isLeaf(value)) continue
         const childKeys = Object.keys(value)
@@ -169,6 +168,7 @@ function simplify(
             delete root[key]
             root[newKey] = childValue
             simplify(root, joinWith)
+            break
         }
         simplify(value, joinWith)
     }

@@ -116,22 +116,20 @@ function renderFsTreeFromPaths(
 ) {
     const tree = Tree.simplify(Tree.fromPaths(paths, sep), sep)
     let output = ''
-    Tree.walk(tree, (key, value, i, parent) => {
+    Tree.walk(tree, (key, value, parent, depth) => {
+        if (depth > 2) return
         const ancestors = Array.from(Tree.ancestors(tree, value))
-        const lastInFolder = i === (Tree.children(parent).length - 1)
+        const siblings = Tree.children(parent)
+        const lastInFolder = siblings.indexOf(value) === (siblings.length - 1)
         let structure = ''
 
         if (Tree.isNode(value)) {
-            const childLeaves = Tree.children(value).filter(Tree.isLeaf)
-            if (childLeaves.length > 10) key += ' (' + childLeaves.length + ')'
+            key += ' (' + Tree.leaves(value).size + ')'
         }
-        else {
-            const siblingLeaves = Tree.children(parent).filter(Tree.isLeaf)
-            if (siblingLeaves.length > 10) return
-        }
+        else if (siblings.filter(Tree.isLeaf).length > 2) return
 
-        ancestors.forEach((node, i) => {
-            const parent = ancestors[i+1]
+        ancestors.reverse().forEach((node, i) => {
+            const parent = ancestors[i-1]
             if (parent === undefined) return
             const siblings = Tree.children(parent)
             const parentIsLastInFolder = siblings.indexOf(node) === (siblings.length - 1)
@@ -144,7 +142,7 @@ function renderFsTreeFromPaths(
             else              structure += '├───'
         }
 
-        output += structure + (Tree.isNode(value) ? style.inverse(' ' + key + ' ') : key) + '\n'
+        output += structure + ' ' + key + ' ' + '\n'
     })
     return output
 }
@@ -225,7 +223,7 @@ async function selectPaths(
 ) : Promise<Array<boolean>> {
     const tree = Tree.simplify(Tree.fromPaths(paths, sep), sep)
     const selected = preselected
-    const openNodes = Tree.nodes(tree)
+    const openNodes = new Set(Tree.children(tree).filter(Tree.isNode))
     let focused : Tree.Node | Tree.Leaf = Tree.children(tree)[0]
     
     hideCursor()
@@ -307,14 +305,15 @@ async function selectPaths(
     function render(_?: unknown) {
         clear()
         let output = '\n'
-        Tree.walk(tree, (key, value, i, parent) => {
+        Tree.walk(tree, (key, value, parent) => {
             const ancestors = Array.from(Tree.ancestors(tree, value))
             if (ancestors.some(p => Tree.isNode(p) && openNodes.has(p) === false)) return
-            const lastInFolder = i === (Tree.children(parent).length - 1)
+            const siblings = Tree.children(parent)
+            const lastInFolder = siblings.indexOf(value) === (siblings.length - 1)
             let structure = ''
     
-            ancestors.forEach((node, i) => {
-                const parent = ancestors[i+1]
+            ancestors.reverse().forEach((node, i) => {
+                const parent = ancestors[i - 1]
                 if (parent === undefined) return
                 const siblings = Tree.children(parent)
                 const parentIsLastInFolder = siblings.indexOf(node) === (siblings.length - 1)
@@ -333,18 +332,15 @@ async function selectPaths(
                 Array.from(Tree.leaves(value)).every(leaf => selected[leaf]) ? '☑' :
                 Array.from(Tree.leaves(value)).some(leaf => selected[leaf])  ? '⊟' : '☐'
 
-            const entryStyle =
-                Tree.isLeaf(value) && !selected[value]         && focused === value ? style.inverse.strikethrough :
-                Tree.isLeaf(value) &&  selected[value]         && focused === value ? style.inverse :
-                Tree.isLeaf(value) && !selected[value]         && focused !== value ? style.dim.strikethrough :
-                Tree.isLeaf(value)  /* selected[value]         && focused !== valu*/? style :
-                Tree.someLeaves(value, leaf => selected[leaf]) && focused === value ? style.inverse :
-             /* Tree.everyLeaf (value, leaf not selected) */      focused === value ? style.inverse.strikethrough :
-                Tree.everyLeaf (value, leaf => selected[leaf]) && focused !== value ? style.bold.underline :
-                Tree.someLeaves(value, leaf => selected[leaf]) && focused !== value ? style.bold.underline.dim :
-             /* Tree.everyLeaf (value, leaf not selected)      && focused !== value*/ style.bold.underline.dim.strikethrough
-            
-            const entryName = entryStyle(key)
+            const isSelected = Tree.isLeaf(value) ? selected[value] : Array.from(Tree.leaves(value)).every(leaf => selected[leaf])
+
+            const classes = {
+                dim          : !isSelected && focused !== value,
+                inverse      : focused === value,
+                strikethrough: !isSelected,
+            }
+
+            const entryName = style(key, classes)
             output += structure + openStatus + selectionStatus + ' ' + entryName + '\n'
         })
         output += '\n' 
@@ -352,7 +348,7 @@ async function selectPaths(
     }
 }
 
-async function selectEncodingOptions(
+async function selectTranscodeOptions(
     prompt  : string,
     options : TranscodeOptions
 ) : Promise<TranscodeOptions> {
@@ -533,7 +529,7 @@ function renderTable(
                 rowLines.map((lines, i) => 
                     Array.from({ length: Math.floor((rowHeight - lines.length) / 2) }, _ => ' '.repeat(usableColumnWidths[i] + 2 * padding))
                     .concat(
-                        lines.map(line => ' '.repeat(padding) + line + ' '.repeat(usableColumnWidths[i] - colors.stripColor(line).length) + ' '.repeat(padding))
+                        lines.map(line => ' '.repeat(padding) + line + ' '.repeat(usableColumnWidths[i] - style.stripColor(line).length) + ' '.repeat(padding))
                     ).concat(
                         Array.from({ length: Math.ceil((rowHeight - lines.length) / 2) }, _ => ' '.repeat(usableColumnWidths[i] + 2 * padding))
                     )
@@ -612,7 +608,7 @@ function splitAtMaxWidth(
         return splitAtMaxWidth(rest.join('\n'), maxWidth, [ ...chunks, ...splitAtMaxWidth(firstLine, maxWidth) ])
     }
 
-    if (colors.stripColor(input).length <= maxWidth)
+    if (style.stripColor(input).length <= maxWidth)
         return [ ...chunks, input ]
     
     const chunk = input.slice(0, maxWidth)
@@ -629,7 +625,7 @@ function columnWidths(
     if (currentRow === undefined) return widths
     const updatedWidths = widths.map((incumbentLargestWidthInColumn, i) => {
         const cell = currentRow[i]
-        const cellWidth = Math.max(...cell.split('\n').map(line => colors.stripColor(line).length))
+        const cellWidth = Math.max(...cell.split('\n').map(line => style.stripColor(line).length))
         return Math.max(cellWidth, incumbentLargestWidthInColumn)
     })
     return columnWidths(rest, updatedWidths)
@@ -647,4 +643,4 @@ function toggle<Key extends string | number | symbol>(
 
 /***** EXPORTS *****/
 
-export { style, lineBreak, print, preview, clear, onKeyPress, selectOneOf, selectMultipleOf, selectPaths, selectEncodingOptions, renderTable, renderFsTreeFromPaths }
+export { style, lineBreak, print, preview, clear, onKeyPress, selectOneOf, selectMultipleOf, selectPaths, selectTranscodeOptions, renderTable, renderFsTreeFromPaths }

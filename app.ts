@@ -5,65 +5,165 @@ import constants                         from './constants.ts'
 import Series                            from './series.ts'
 import * as CantContinue                 from './cant continue.ts'
 import { $, fs, path, which, partition } from './deps.ts'
+import { print } from './terminal.ts'
 
 
 /***** TYPES *****/
 
 export interface AppOptions {
-    cwd    : string
-    ready  : (images   : fs.WalkEntry[]) => Promise<{ selectedImages : fs.WalkEntry[], transcodeOptions : TranscodeOptions }>
-    show   : (progress : Optimization) => Promise<unknown>,
-    report : <A extends CantContinue.Any>(cantContinue : A) => unknown
+    cwd          : string
+    ready        : (images   : string[], transcodeOptions : TranscodeOptions) => Promise<{ selectedImages : string[], widths : Array<number>, formats: Array<FormatDetails> }>
+    reportError  : <A extends CantContinue.Any>(cantContinue : A) => unknown
+    showProgress : (sourcePath : string, progress : ReadableStream<TranscodingProgress>) => Promise<unknown>
+    showSummary  : (imageInfo : ImageInfo, transcodeTasks : TranscodeTask[]) => unknown
+}
+
+export interface TranscodeOptions {
+    formats : Record<Format, {
+        enabled : boolean
+        codec   : string
+        quality : number
+        minimum : number
+        maximum : number
+    }>
+    widths : Array<{
+        width   : number
+        enabled : boolean
+    }>
 }
 
 
 /***** MAIN *****/
 
-export default async function app({ cwd, ready, report, show }: AppOptions) {
-    const maybeConfig =
-        await searchForAstroConfig(cwd) ??
-        await searchForAstroConfig(path.join(cwd, '..')) ??
-        await searchForAstroConfig(path.join(cwd, '..', '..'))
+export default async function app({ cwd, ready, reportError, showProgress, showSummary }: AppOptions) {
 
-    if (maybeConfig === undefined) return report(
-        new CantContinue.CouldntFindAstroConfigFile([
-            path.join(cwd, 'astro.config.*'),
-            path.join(cwd, '..', 'astro.config.*'),
-            path.join(cwd, '..', '..', 'astro.config.*')
-        ])
-    )
+    /*** SETUP ***/
 
-    const projectDetails = parseAstroConfig(maybeConfig)
-    const ffmpegPromise  = createTemporaryFolder().then(searchForFfmpeg)
+    const configFile = await searchForAstroConfig(cwd)
+
+    if (unhappy(configFile)) return reportError(configFile)
+
+    const projectDetails = parseAstroConfig(configFile)
+    const ffmpegPromise  = findOrCreateTemporaryFolder().then(searchForFfmpeg)
     const allImages      = await searchForImages(projectDetails.srcDir).toArray()
     
-    const { selectedImages, transcodeOptions } = await ready(allImages)
-        
-    const maybeFfmpeg = await ffmpegPromise
-    if (unhappy(maybeFfmpeg)) return report(maybeFfmpeg)
-    const ffmpeg = maybeFfmpeg
+    const { selectedImages, widths, formats } =
+        await ready(allImages, structuredClone(constants.transcoding))
+    
+    const ffmpeg = await ffmpegPromise
+
+    if (unhappy(ffmpeg)) return reportError(ffmpeg)
+
+
+    /*** OPTIMIZATION ***/
 
     const jobQueue = selectedImages[Symbol.iterator]()
+    const accumulatedOptimizations = new Array<{ imageInfo: ImageInfo, tasks: TranscodeTask[] }>
 
     // thread pool
-    Array.from({ length: navigator.hardwareConcurrency }).forEach(spawnThread)
-    
-    async function spawnThread() : Promise<void> {
-        const { done, value: imageFile } = jobQueue.next()
-        
-        // close this thread
-        if (done) return
+    // TODO: investigate whether the codecs used are multi-threaded
+    // they may need to be made single-threaded for this to be optimal
+    await Promise.all(Array.from({ length: navigator.hardwareConcurrency }).map(
+        async function spawnThread() : Promise<void> {
+            const { done, value: sourcePath } = jobQueue.next()
+            
+            // close this thread
+            if (done) return
 
-        const imageInfo = await parseImageInfo(ffmpeg, imageFile.path)
+            const imageInfo = await parseImageInfo(ffmpeg, sourcePath)
+            
+            if (unhappy(imageInfo)) {
+                await reportError(imageInfo)
+                // process another image on this thread
+                return spawnThread()
+            }
+
+            const transcodeMatrix = createTranscodeMatrix(imageInfo, widths, formats)
+            const { previouslyTranscoded, requiredTranscodes } = await determineRequiredTranscodes(transcodeMatrix)
+            const justTranscoded = new Array<TranscodeTask>
+
+            if (requiredTranscodes.length > 0) {
+                const { progress, couldntTranscodeImage } = optimizeImage(ffmpeg, imageInfo.sourcePath, requiredTranscodes)
+                
+                await showProgress(sourcePath, progress)
+                const cantContinue = await couldntTranscodeImage
+                if (cantContinue !== null) reportError(cantContinue)
+    
+                const transcoded : TranscodeTask[] =
+                    await Promise.all(
+                        requiredTranscodes.map(async task => {
+                            const stat = await safeStat(task.destinationPath)
+                            await fs.ensureDir(path.dirname(task.destinationPath))
+                            if (stat === null) return { ...task, new: true }
+                            return { ...task, stat, new: true }
+                        })
+                    )
+
+                justTranscoded.concat(transcoded)
+            }
+
+            // this line is to make the type of previouslyTranscoded less specific
+            // so that concat doesnt complain about incompatible types on the next
+            const prevTasks : TranscodeTask[] = previouslyTranscoded
+
+            const tasks = prevTasks.concat(justTranscoded)
+
+            accumulatedOptimizations.push({ imageInfo, tasks })
+
+            // create and show a summary of the optimization
+            // formats, widths, file sizes and savings on a table
+            await showSummary(imageInfo, tasks)
+            
+            // process another image on this thread
+            return spawnThread()
+        }
+    ))
+
+
+    /*** CREATING THE MANIFEST FILE ***/
+    
+    const tick = createTicker()
+    
+    type SourcePath = string
+    type Width      = number
+    type Identifier = `$${number}`
+
+    const manifest : Record<SourcePath, { original : Identifier } & Record<Format, Record<Width, Identifier>>> = {}
+    let manifestFileContents = ''
+
+    accumulatedOptimizations.forEach(({ imageInfo, tasks }) => {
         
-        if (happy(imageInfo))
-            await show(await optimizeImage(ffmpeg, imageInfo, transcodeOptions, report))
-        else
-            await report(imageInfo)
+        const sourceIndentifier: Identifier = `$${ tick() }`
         
-        // process another image on this thread
-        return spawnThread()
-    }
+        const sourcePath : SourcePath =
+            Deno.build.os === 'windows'
+                ? path.relative(configFile.path, imageInfo.sourcePath).replaceAll('\\', '/')
+                : path.relative(configFile.path, imageInfo.sourcePath)
+        
+        // TODO: make this a relative path
+        manifestFileContents += `import ${sourceIndentifier} from '${sourcePath}'\n`
+        tasks.forEach(task => {
+            const format     : Format     = task.format
+            const width      : Width      = task.width
+            const identifier : Identifier = `$${ tick() }`
+            
+            const destinationPath = 
+                Deno.build.os === 'windows'
+                    ? path.relative(configFile.path, task.destinationPath).replaceAll('\\', '/')
+                    : path.relative(configFile.path, task.destinationPath)
+
+            manifest[sourcePath]              ??= { original : sourceIndentifier } as { original : Identifier} & Record<Format, Record<Width, Identifier>>
+            manifest[sourcePath][format]      ??= {}
+            manifest[sourcePath][format][width] = identifier
+            
+            // TODO: make this a relative path
+            manifestFileContents += `import ${identifier} from '${destinationPath}'\n`
+        })
+    })
+    manifestFileContents += '\nexport default '
+    manifestFileContents += JSON.stringify(manifest, null, 4).replaceAll(/"\$(\d+)"/g, match => match.slice(1, -1))
+    manifestFileContents += ' as const'
+    print([manifestFileContents])
 }
 
 
@@ -76,16 +176,38 @@ interface ConfigFile {
 
 async function searchForAstroConfig(
     dir : string
-) : Promise<ConfigFile | undefined> {
-    const maybeFound =
-        await walk(dir, { includeDirs: false, includeFiles: true, maxDepth: 1 })
-            .find(file => file.name.startsWith('astro.config'))
+) {
+    const fileNames = [
+        'astro.config.mjs',
+        'astro.config.mts',
+        'astro.config.js',
+        'astro.config.ts',
+        'astro.config.cjs',
+        'astro.config.cts',
+    ]
+
+    const dirs = [
+        dir,
+        path.join(dir, '..'),
+        path.join(dir, '..', '..')
+    ]
+
+    const paths = dirs.flatMap(dir => fileNames.map(fileName => path.join(dir, fileName)))
+
+    // project may be inside the root folder (/project)
+    // in which case /project/.. and /project/../.. are the same 
+    const uniquePaths = Array.from(new Set(paths))
+
+    const configFilePath =
+        await Series.from(uniquePaths)
+        .find(async path => await safeStat(path) !== null)
     
-    if (maybeFound === undefined) return undefined
+    if (configFilePath === undefined)
+        return new CantContinue.CouldntFindAstroConfigFile(uniquePaths)
     
     return {
-        path    : maybeFound.path,
-        contents: await Deno.readTextFile(maybeFound.path)
+        path    : configFilePath,
+        contents: await Deno.readTextFile(configFilePath)
     } satisfies ConfigFile
 }
 
@@ -114,31 +236,33 @@ function parseAstroConfig(
 }
 
 interface ImageInfo {
-    path   : string
-    format : string
-    color  : string
-    width  : number
-    height : number
+    color      : string
+    format     : string
+    sourcePath : string
+    stat       : Deno.FileInfo
+    height     : number
+    width      : number
 }
 
 async function parseImageInfo(
-    ffmpeg : string,
-    path   : string
+    ffmpeg     : string,
+    sourcePath : string
 ): Promise<
     | ImageInfo
     | CantContinue.CouldntParseImageInfo
 > {
     // ffmpeg logs to stderr
-    const commandResult        = await $`${ffmpeg} -hide_banner -i ${path}`.noThrow().stderr('piped')
+    const commandResult        = await $`${ffmpeg} -hide_banner -i ${sourcePath}`.noThrow().stderr('piped')
     const commandOutput        = commandResult.stderr
     const imageInfoRegex       = /^\s*Stream #0:0: Video: (?<format>.+), (?<color>\w+\(.*\)), (?<width>\d+)x(?<height>\d+)/m
     const imageInfoRegexResult = commandOutput.match(imageInfoRegex)
+    const stat                 = await Deno.stat(sourcePath)
     
     if (imageInfoRegexResult === null)
         return new CantContinue.CouldntParseImageInfo(
-            `${ffmpeg} -hide_banner -i ${path}`,
+            `${ffmpeg} -hide_banner -i ${sourcePath}`,
             commandOutput,
-            path
+            sourcePath
         )
     
     const {
@@ -151,126 +275,138 @@ async function parseImageInfo(
     const width  = Number(_width)
     const height = Number(_height)
     
-    return { path, format, color, width, height } satisfies ImageInfo
+    return { color, format, sourcePath, height, width, stat } satisfies ImageInfo
 }
 
-type Optimization = CachedOptimization | UnderwayOptimization
+type Format = 'jpeg' | 'webp' | 'avif'
 
-interface CachedOptimization {
-    previouslyTranscoded : TranscodeTask[]
-    sourcePath           : string
+interface FormatDetails {
+    codec   : string
+    format  : Format
+    quality : number
 }
 
-interface UnderwayOptimization extends CachedOptimization {
-    progress           : ReadableStream<Pick<TranscodeTask, 'destinationPath'>>
-    transcodingTargets : TranscodeTask[]
-}
-
-interface TranscodeTask {
-    codec           : string
+interface TranscodeTask extends FormatDetails {
     destinationPath : string
-    format          : 'jpeg' | 'webp' | 'avif' 
-    quality         : number
+    new            ?: true
+    stat           ?: Deno.FileInfo
     width           : number
 }
 
-export interface TranscodeOptions {
-    formats : Record<'jpeg' | 'webp' | 'avif', {
-        enabled : boolean
-        codec   : string
-        quality : number
-        minimum : number
-        maximum : number
-    }>
-    widths : Array<{
-        width   : number
-        enabled : boolean
-    }>
+interface SuccessfulTranscodeTask extends TranscodeTask {
+    stat : Deno.FileInfo
 }
 
-async function optimizeImage(
-    ffmpeg  : string,
-    source  : ImageInfo,
-    options : TranscodeOptions,
-    report  : AppOptions['report']
-) : Promise<Optimization> {
-    
-    const widths =
-        options.widths
-        // avoid upscaling by filter out widths larger than original width
-        .filter(({ width, enabled }) => enabled && width < source.width)
-        .map(({ width }) => width)
-    
-    const _targets =
-        widths.flatMap(width =>
-            Object.keys(options.formats)
-            .filter(format => options.formats[format as 'jpeg'].enabled)
-            .map(async format_ => {
-                const format = format_ as keyof typeof options.formats
-                const { codec, quality } = options.formats[format]
-                const destinationPath = destinationPathFromImageInfo(source.path, format, width, quality)
-                const exists = await fs.exists(destinationPath)
-                await fs.ensureDir(path.dirname(destinationPath))
-                return { codec, exists, format, destinationPath, quality, width }
+type TranscodeMatrix = Array<TranscodeTask>
+
+function createTranscodeMatrix(
+    image   : ImageInfo,
+    widths  : number[],
+    formats : Array<{
+        codec   : string
+        format  : Format
+        quality : number
+    }>
+) : TranscodeMatrix {
+    return (
+        formats.flatMap(({ format, codec, quality }) =>
+            widths
+            // avoid upscales
+            .filter(width => width < image.width)
+            .map(width => {
+                const destinationPath = determineDestinationPath(image.sourcePath, format, quality, width)
+                return { codec, format, destinationPath, quality, width }
+            })
+        )
+    )
+}
+
+async function determineRequiredTranscodes(
+    transcodeMatrix : TranscodeMatrix
+) {
+    const stattedTranscodeMatrix : Array<SuccessfulTranscodeTask | TranscodeTask> =
+        await Promise.all(
+            transcodeMatrix.map(async task => {
+                const stat = await safeStat(task.destinationPath)
+                await fs.ensureDir(path.dirname(task.destinationPath))
+                if (stat === null) return task
+                return { ...task, stat }
             })
         )
     
-    const targets = await Promise.all(_targets)
-    
-    const [ previouslyTranscoded, transcodingTargets ] = partition(targets, ({ exists }) => exists)
-    
-    const sourcePath = source.path
-    
-    if (transcodingTargets.length === 0) return { sourcePath, previouslyTranscoded } satisfies CachedOptimization
+    const [ previouslyTranscoded, requiredTranscodes ] =
+        partition(
+            stattedTranscodeMatrix,
+            (task) : task is SuccessfulTranscodeTask => 'stat' in task
+        )
 
+    return { previouslyTranscoded, requiredTranscodes }
+}
+
+type TranscodingProgress = { destinationPath : string }
+
+function optimizeImage(
+    ffmpeg         : string,
+    sourcePath     : string,
+    transcodeTasks : Array<TranscodeTask>,
+) {
     const encodeInto =
-        transcodingTargets.map(({ width, codec, quality, destinationPath }) => {
+        transcodeTasks.map(({ width, codec, quality, destinationPath }) => {
             if (codec === 'libaom-av1') return `-c:v ${codec} -vf scale=${width}:-2 -b:v 0 -crf ${quality} ${destinationPath}`
             else                        return `-c:v ${codec} -vf scale=${width}:-2 -b:v 0 -q:v ${quality} ${destinationPath}`
         }).join(' ')
     
     const command = `${ffmpeg} -hide_banner -i ${sourcePath} ${encodeInto}`
-    
-    const progress =
-        $.raw`${command}`
-        .stderr('piped')
-        .noThrow()
-        .spawn()
-        .stderr()
-        .pipeThrough(new TextDecoderStream)
-        .pipeThrough(progressParser(command, sourcePath, report))
-    
-    return { sourcePath, progress, previouslyTranscoded, transcodingTargets } satisfies UnderwayOptimization
-}
 
-function progressParser(
-    command    : string,
-    sourcePath : string,
-    report     : AppOptions['report']
-) {
     let accumulatedLog  = ''
-    const fullLog = new Deferred<string>
-    return new TransformStream<string, { destinationPath : string }>({
-        transform(chunk, controller) {
+    const fullLog = new Future<string>
+    const couldntTranscodeImage = new Future<CantContinue.CouldntTranscodeImage | null>
+
+    const { readable: progress, writable: progressWritable } =
+        new TransformStream<TranscodingProgress, TranscodingProgress>
+    
+    const progressWriter = progressWritable.getWriter()
+
+    $.raw`${command}`
+    .stderr('piped')
+    .noThrow()
+    .spawn()
+    .stderr()
+    .pipeThrough(new TextDecoderStream)
+    .pipeTo(new WritableStream({
+        
+        write(chunk) {
+            const errorMatch = chunk.match(/Error|error|Conversion failed|Could not open file|Invalid argument|Unable to find a suitable output format|At least one output file must be specified/)
             
-            if (/Error|error|Conversion failed|Could not open file|Invalid argument|Unable to find a suitable output format/.test(chunk))
-                report(new CantContinue.CouldntTranscodeImage(command, sourcePath, chunk, fullLog))
+            if (errorMatch !== null) {
+                const e = new CantContinue.CouldntTranscodeImage(command, sourcePath, chunk, fullLog)
+                couldntTranscodeImage.resolve(new CantContinue.CouldntTranscodeImage(command, sourcePath, chunk, fullLog))
+            }
             
-            const match = chunk.match(/Output #\d+, [^\s]+, to '(?<path>[^']*.)':/)
-            if (match !== null) controller.enqueue({ destinationPath: match.groups!.path })
+            const progressMatch = chunk.match(/Output #\d+, [^\s]+, to '(?<path>[^']*.)':/)
+            
+            if (progressMatch !== null)
+                progressWriter.write({ destinationPath: progressMatch.groups!.path })
+
             accumulatedLog += chunk
         },
-        flush() {
+
+        close() {
+            progressWriter.close()
+            progressWriter.releaseLock()
             fullLog.resolve(accumulatedLog)
+            couldntTranscodeImage.resolve(null)
         }
-    })
+    }))
+    
+    return { progress, couldntTranscodeImage }
 }
 
-function destinationPathFromImageInfo(
+function determineDestinationPath(
     sourcePath : string,
     format     : string,
-    width      : number,
     quality    : number,
+    width      : number
 ) {
     const fileName = `${path.basename(sourcePath, path.extname(sourcePath))}-${quality}q-${width}w.${format}`
 
@@ -286,10 +422,11 @@ function searchForImages(
 ) {
     return walk(inFolder)
         .filter(file => constants.considerForOptimization.some(ext => file.name.endsWith(ext)))
-        .filter(file => file.path.includes(path.sep + constants.optimizedFolderName + path.sep) === false)
+        .map(({ path }) => path)
+        .filter(sourcePath => sourcePath.includes(path.sep + constants.optimizedFolderName + path.sep) === false)
 }
 
-async function createTemporaryFolder() {
+async function findOrCreateTemporaryFolder() {
     const previouslyCreatedAt = localStorage.getItem('temporary folder')
 
     if (
@@ -345,22 +482,14 @@ async function downloadFfmpeg(
     | CantContinue.CouldntDownloadFfmpeg
     | CantContinue.CouldntWriteFfmpegToDisk
 > {
-    const cache          = await caches.open('astro-optimize-images')
     const url            = constants.ffmpeg.downloadUrl.windows.x64
-    const ffmpegRequest  = new Request(url)
-    const alreadyFetched = await cache.match(ffmpegRequest)
-    
-    const ffmpegResponse = alreadyFetched ?? await fetch(ffmpegRequest).catch(error => error as Error)
+    const ffmpegResponse = await fetch(url).catch(error => error as Error)
 
-    if (ffmpegResponse instanceof Error)
+    if (unhappy(ffmpegResponse))
         return new CantContinue.CouldntConnectToInternet(url, ffmpegResponse)
 
     if (ffmpegResponse.ok === false)
         return new CantContinue.CouldntDownloadFfmpeg(ffmpegResponse)
-
-    if (alreadyFetched === undefined) {
-        cache.put(ffmpegRequest, ffmpegResponse.clone()).catch(_ => _)
-    }
     
     try {
         const ffmpegFileHandler = await Deno.open(ffmpegPath, { create: true, write: true })
@@ -373,9 +502,11 @@ async function downloadFfmpeg(
     }
 }
 
-/***** DEFERRED *****/
+/***** FUTURE *****/
 
-class Deferred<A = unknown> implements PromiseLike<A> {
+class Future<A = unknown> implements PromiseLike<A> {
+
+    [Symbol.toStringTag] = 'Future'
     
     then    : Promise<A>['then']
     catch   : Promise<A>['catch']
@@ -404,10 +535,73 @@ function walk(root: WalkParams[0], options?: WalkParams[1]) {
     return Series.from(fs.walk(root, options))
 }
 
+async function safeStat(path : string | URL) {
+    try {
+        return await Deno.stat(path)
+    }
+    catch (error) {
+        if (error instanceof Deno.errors.NotFound)
+            return null
+        else
+            throw error
+    }
+}
+
+function createTicker() {
+    let x = 0
+    return () => ++x
+}
+
 function happy<A>(a : A) : a is Exclude<A, Error> {
     return unhappy(a) === false
 }
 
 function unhappy<A>(a : A) : a is Extract<A, Error> {
     return a instanceof Error
+}
+
+/***** UTILITY TYPES *****/
+
+/**
+ * Creates a deep copy of a given value using the structured clone algorithm.
+ *
+ * Unlike a shallow copy, a deep copy does not hold the same references as the
+ * source object, meaning its properties can be changed without affecting the
+ * source. For more details, see
+ * [MDN](https://developer.mozilla.org/en-US/docs/Glossary/Deep_copy).
+ *
+ * Throws a `DataCloneError` if any part of the input value is not
+ * serializable.
+ *
+ * @example
+ * ```ts
+ * const object = { x: 0, y: 1 };
+ *
+ * const deepCopy = structuredClone(object);
+ * deepCopy.x = 1;
+ * console.log(deepCopy.x, object.x); // 1 0
+ *
+ * const shallowCopy = object;
+ * shallowCopy.x = 1;
+ * // shallowCopy.x is pointing to the same location in memory as object.x
+ * console.log(shallowCopy.x, object.x); // 1 1
+ * ```
+ *
+ * @category DOM APIs
+ */
+declare function structuredClone<SourceType extends Serializable>(source : SourceType, options?: StructuredSerializeOptions) : Mutable<SourceType>
+
+type Serializable =
+    | string
+    | number
+    | boolean
+    | null
+    | undefined
+    | Serializable[]
+    | { [key : string | number] : Serializable }
+    | readonly Serializable[]
+    | { readonly [key : string | number] : Serializable }
+
+type Mutable<A> = {
+    -readonly [K in keyof A]: Mutable<A[K]>
 }

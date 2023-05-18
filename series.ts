@@ -9,6 +9,7 @@ interface Series<A> extends AsyncIterable<A> {
     every                     (predicate : (element: A) => MaybePromise<boolean>) : Promise<boolean>
     filter       <B extends A>(predicate : (element: A) => element is B)          : Series<B>
     filter                    (predicate : (element: A) => MaybePromise<boolean>) : Series<A>
+    find     <B extends A = A>(predicate : (element: A) => element is B)          : Promise<B | undefined>
     find                      (predicate : (element: A) => MaybePromise<boolean>) : Promise<A | undefined>
     map                    <B>(mapFun    : (element: A) => B)                     : Series<Awaited<B>>
     partition<B extends A = A>(predicate : (element: A) => element is B)          : [ Series<Extract<A, B>>, Series<Exclude<A, B>> ]

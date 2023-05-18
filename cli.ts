@@ -12,48 +12,63 @@ import {
     print,
     selectOneOf,
     selectPaths,
-    selectEncodingOptions,
+    selectTranscodeOptions,
     renderTable,
     renderFsTreeFromPaths
 }                          from './terminal.ts'
 import { path }            from './deps.ts'
 
-import type { AppOptions, TranscodeOptions } from './app.ts'
-import type { HOT }                          from './deps.ts'
+import type { AppOptions } from './app.ts'
+import type { HOT }        from './deps.ts'
 
 
 /***** TYPES *****/
 
-type Messages  = typeof messages
-type ReadyFun  = AppOptions['ready']
-type ReportFun = AppOptions['report']
-type ShowFun   = AppOptions['show']
+type Messages        = typeof messages
+type ReadyFun        = AppOptions['ready']
+type ReportErrorFun  = AppOptions['reportError']
+type ShowProgressFun = AppOptions['showProgress']
+type ShowSummaryFun  = AppOptions['showSummary']
+
+
+/***** STATE *****/
+
+const underwayOptimizations : Record<string, string> = {}
 
 
 /***** ENTRYPOINT *****/
 
 const cwd = Deno.cwd()
-await app({ cwd , ready, report, show })
+await app({ cwd, ready, reportError, showProgress, showSummary })
 
 
 /***** IMPLEMENTATION *****/
 
 ready satisfies ReadyFun
 async function ready(
-    images : Parameters<ReadyFun>[0]
+    sourcePaths : Parameters<ReadyFun>[0],
+    options     : Parameters<ReadyFun>[1]
 ) : ReturnType<ReadyFun> {
     
-    let pathMask = new Array<boolean>(images.length).fill(true)
-    let options : TranscodeOptions = structuredClone(constants.transcoding)
-    
-    const sourcePaths = images.map(image => image.path)
+    let pathMask = new Array<boolean>(sourcePaths.length).fill(true)
     
     print(['\n'])
     await menu()
     
     return {
-        selectedImages: images.filter((_, i) => pathMask[i]),
-        transcodeOptions: options
+        selectedImages:
+            sourcePaths
+            .filter((_, i) => pathMask[i]),
+        
+        widths:
+            options.widths
+            .filter(({ enabled }) => enabled)
+            .map(({ width }) => width),
+        
+        formats:
+            Object.entries(options.formats)
+            .filter(([ _, { enabled } ]) => enabled)
+            .map(([ format, { codec, quality } ]) => ({ codec, format: format as keyof typeof options.formats, quality }))
     }
 
     function summary() {
@@ -99,19 +114,20 @@ async function ready(
     }
 
     async function configure() {
-        options = await selectEncodingOptions('Configure', options)
+        options = await selectTranscodeOptions('Configure', options)
         return menu()
     }
 }
 
-report satisfies ReportFun
-async function report(
-    cantContinue : Parameters<ReportFun>[0]
+reportError satisfies ReportErrorFun
+async function reportError(
+    cantContinue : Parameters<ReportErrorFun>[0],
 ) : Promise<void> {
     const { projectName } = constants
     
     if (cantContinue instanceof CantContinue.CouldntFindAstroConfigFile) {
-        print([
+        return print([
+            lineBreak(),
             message('CouldntFindAstroConfigFile', {
                 checkedPaths:
                     cantContinue.checkedPaths
@@ -124,7 +140,7 @@ async function report(
 
     if (cantContinue instanceof CantContinue.CouldntConnectToInternet) {
         const { error, url } = cantContinue
-        print([
+        return print([
             message('CouldntConnectToInternet', {
                 url,
                 message: style.red(error.message)
@@ -134,7 +150,7 @@ async function report(
     }
 
     if (cantContinue instanceof CantContinue.CouldntDownloadFfmpeg) {
-        print([
+        return print([
             message('CouldntDownloadFfmpeg', {
                 projectName,
                 response: await serializeResponse(cantContinue.response)
@@ -144,7 +160,7 @@ async function report(
     }
 
     if (cantContinue instanceof CantContinue.CouldntWriteFfmpegToDisk) {
-        print([
+        return print([
             message('CouldntWriteFfmpegToDisk', {
                 projectName,
                 error : style.red(cantContinue.error.message)
@@ -155,143 +171,112 @@ async function report(
 
     if (cantContinue instanceof CantContinue.CouldntParseImageInfo) {
         const { path, command, output } = cantContinue
-        print([
+        return print([
             message('CouldntParseImageInfo', { path, command, output }),
             lineBreak()
         ])
     }
 
     if (cantContinue instanceof CantContinue.CouldntTranscodeImage) {
-        const { errorLine, command, sourcePath } = cantContinue
+        const { errorLine, command, sourcePath, fullLog } = cantContinue
                     
-        // (async () => {
-        //     const [ tempFile, log ] = await Promise.all([Deno.makeTempFile({ suffix: '.txt' }), fullLog])
-        //     await Deno.writeTextFile(tempFile, log)
-        //     print([ 'Full error log for ' + path.relative(cwd, sourcePath) + ' written to ' + tempFile ])
-        // })()
+        const [ tempFile, log ] =
+            await Promise.all([
+                Deno.makeTempFile({ suffix: '.txt' }),
+                fullLog
+            ])
+        
+        await Deno.writeTextFile(tempFile, log)
 
-        print([
+        return print([
             message('CouldntTranscodeImage', {
-                path   : style.blue(sourcePath),
-                command: style.yellow(command),
-                output : style.red(errorLine)
+                path         : style.blue(path.relative(cwd, sourcePath)),
+                command      : style.yellow(command),
+                output       : style.stripColor.red(errorLine),
+                logWrittenTo : style.blue(tempFile)
             }),
-            lineBreak()
+            lineBreak(),
         ])
     }
     throw new Error('report() called with invalid arguments', { cause: arguments })
 }
 
-show satisfies ShowFun
-async function show(
-    optimizationProgress : Parameters<ShowFun>[0]
+
+showProgress satisfies ShowProgressFun
+async function showProgress(
+    sourcePath : Parameters<ShowProgressFun>[0],
+    progress   : Parameters<ShowProgressFun>[1],
 ) : Promise<void> {
-    
-    if ('progress' in optimizationProgress){
+
+    await progress.pipeTo(new WritableStream({
+        write({ destinationPath }) {
+            render(underwayOptimizations[sourcePath] = destinationPath)
+        },
+        close() {
+            render(delete underwayOptimizations[sourcePath])
+        }
+    }))
+
+    function render(_ ?: unknown) {
+        const table =
+            Object.entries(underwayOptimizations)
+            .map(([ source, destination ]) => [ path.relative(cwd, source), ' => ', path.relative(cwd, destination) ])
         
-        const { sourcePath, progress, previouslyTranscoded, transcodingTargets } = optimizationProgress
-
-        const global = globalThis as Record<symbol, Record<string, string>>
-
-        // this is added onto global because it needs to be shared across multiple invocations of this function
-        const underwayOptimizations = global[Symbol.for('underway optimizations')] ??= {}
-
-        await progress.pipeTo(new WritableStream({
-            write({ destinationPath }) {
-
-                underwayOptimizations[sourcePath] = destinationPath
-                
-                const progressMessages =
-                    Object.keys(underwayOptimizations)
-                    .map(sourcePath => sourcePath + ' => ' + underwayOptimizations[sourcePath] + '\n')
-                
-                preview(progressMessages)
-            },
-            async close() {
-                
-                delete underwayOptimizations[sourcePath]
-
-                const progressMessages =
-                    Object.keys(underwayOptimizations)
-                    .map(sourcePath => sourcePath + ' => ' + underwayOptimizations[sourcePath] + '\n')
-            
-                preview(progressMessages)
-
-                const prev =
-                    previouslyTranscoded.map(async task => ({
-                        ...task,
-                        size: (await safeStat(task.destinationPath))?.size,
-                        new : false
-                    }))
-
-                const current =
-                    transcodingTargets.map(async task => ({
-                        ...task,
-                        size: (await safeStat(task.destinationPath))?.size,
-                        new : true
-                    }))
-
-                const [ sourceFileSize, prevTasks, currentTasks ] = await Promise.all([
-                    safeStat(sourcePath).then(stat => stat!.size),
-                    Promise.all(prev),
-                    Promise.all(current)
-                ])
-
-                const title   = path.relative(cwd, sourcePath) + ' (' + readableFileSize(sourceFileSize) + ')'
-                const tasks   = prevTasks.concat(currentTasks)
-                const formats = Array.from(new Set(tasks.map(task => task.format)))
-                const widths  = Array.from(new Set(tasks.map(task => task.width)))
-                const header  = [ 'Widths\\Formats', ...formats.map(String) ]
-                const rows    = widths.map(width => [
-                    String(width),
-                    ...formats.map(format => {
-                        
-                        const task = tasks.find(task => task.format === format && task.width === width)!
-                        
-                        if (task.size === undefined)
-                            return style.red('failed')
-
-                        const delta = task.size / sourceFileSize
-                        const smaller = delta < 1
-
-                        const classes = {
-                            green: task.new && smaller,
-                            red  : task.new && !smaller,
-                            dim  : !task.new
-                        }
-
-                        const fileSizeText = readableFileSize(task.size)
-
-                        const savingsText =
-                            smaller
-                                ? '⇩ ' + ((1 - delta) * 100).toFixed(0) + '%'
-                                : '⇧ ' + ((delta - 1) * 100).toFixed(0) + '%'
-                        
-                        return style(fileSizeText, classes) + '\n' + style(savingsText, classes)
-                    })
-                ])
-
-                print([
-                    '\n',
-                    title,
-                    renderTable([ header, ...rows ]),
-                    '\n'
-                ])
-            }
-        }))
-    }
-
-    else {
-        const { sourcePath, previouslyTranscoded } = optimizationProgress
-        print([
-            message('AlreadyOptimized', {
-                path : path.relative(cwd, sourcePath),
-                count: String(previouslyTranscoded.length)
-            }),
-            lineBreak()
-        ])
+        preview([ renderTable(table, { border: 'none', padding: 0 }) ])
     }
 }
+
+showSummary satisfies ShowSummaryFun
+function showSummary(
+    image : Parameters<ShowSummaryFun>[0],
+    tasks : Parameters<ShowSummaryFun>[1]
+) {
+    
+    const title   = path.relative(cwd, image.sourcePath) + ' (' + readableFileSize(image.stat.size) + ')'
+    const formats = Array.from(new Set(tasks.map(task => task.format)))
+    const widths  = Array.from(new Set(tasks.map(task => task.width)))
+    const header  = [ 'Widths\\Formats', ...formats.map(String) ]
+    const rows    = widths.map(width => [
+        String(width),
+        ...formats.map(format => {
+            const task = tasks.find(task => task.format === format && task.width === width)!
+                    
+            if (
+                !('stat' in task) ||
+                typeof task.stat !== 'object' ||
+                !('size' in task.stat) ||
+                typeof task.stat.size !== 'number'
+            )
+                return style.red('failed')
+
+            const delta = task.stat.size / image.stat.size
+            const smaller = delta < 1
+
+            const classes = {
+                green: task.new && smaller,
+                red  : task.new && !smaller,
+                dim  : !task.new
+            }
+
+            const fileSizeText = readableFileSize(task.stat.size)
+
+            const savingsText =
+                smaller
+                    ? '⇩ ' + ((1 - delta) * 100).toFixed(0) + '%'
+                    : '⇧ ' + ((delta - 1) * 100).toFixed(0) + '%'
+            
+            return style(fileSizeText, classes) + '\n' + style(savingsText, classes)
+        })
+    ])
+
+    print([
+        '\n',
+        title,
+        renderTable([ header, ...rows ]),
+        '\n'
+    ])
+}
+
 
 
 /***** TYPED MESSAGE TEMPLATES *****/
@@ -314,18 +299,6 @@ function message<Topic extends keyof Messages>(
 
 
 /***** UTILITY FUNCTIONS *****/
-
-async function safeStat(path : string | URL) {
-    try {
-        return await Deno.stat(path)
-    }
-    catch (error) {
-        if (error instanceof Deno.errors.NotFound)
-            return null
-        else
-            throw error
-    }
-}
 
 function readableFileSize(size : number) {
     const scales = ['b', 'kb', 'mb', 'gb']
@@ -356,48 +329,3 @@ type Variables<Template> =
             HOT.Tuples.ToUnion
         ]
     >
-
-/**
- * Creates a deep copy of a given value using the structured clone algorithm.
- *
- * Unlike a shallow copy, a deep copy does not hold the same references as the
- * source object, meaning its properties can be changed without affecting the
- * source. For more details, see
- * [MDN](https://developer.mozilla.org/en-US/docs/Glossary/Deep_copy).
- *
- * Throws a `DataCloneError` if any part of the input value is not
- * serializable.
- *
- * @example
- * ```ts
- * const object = { x: 0, y: 1 };
- *
- * const deepCopy = structuredClone(object);
- * deepCopy.x = 1;
- * console.log(deepCopy.x, object.x); // 1 0
- *
- * const shallowCopy = object;
- * shallowCopy.x = 1;
- * // shallowCopy.x is pointing to the same location in memory as object.x
- * console.log(shallowCopy.x, object.x); // 1 1
- * ```
- *
- * @category DOM APIs
- */
-declare function structuredClone<SourceType extends Serializable>(source : SourceType, options?: StructuredSerializeOptions) : Mutable<SourceType>
-
-type Serializable =
-    | string
-    | number
-    | boolean
-    | null
-    | undefined
-    | Serializable[]
-    | { [key : string | number] : Serializable }
-    | readonly Serializable[]
-    | { readonly [key : string | number] : Serializable }
-
-type Mutable<A> = {
-    -readonly [K in keyof A]: Mutable<A[K]>
-}
-
