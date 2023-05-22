@@ -10,26 +10,26 @@ import type { TranscodeOptions } from './app.ts'
 /***** CONSTANTS *****/
 
 const box = {
-    intersection    : { double : "╬", normal : "┼", dashed : "╎", dotted : "┊", none : " " },
+    intersection    : { double : "╬", normal : "┼", dashed : "╎", dotted : "┊", none : "" },
     line: {
-        horizontal  : { normal : "─", double : "═", dashed : "╌", dotted : "┈", none : " " },
-        vertical    : { normal : "│", double : "║", dashed : "╎", dotted : "┊", none : " " }
+        horizontal  : { normal : "─", double : "═", dashed : "╌", dotted : "┈", none : "" },
+        vertical    : { normal : "│", double : "║", dashed : "╎", dotted : "┊", none : "" }
     },
     corner: {
         top: {
-            left    : { normal : "┌", double : "╔", dashed : "╌", dotted : "┈", none : " " },
-            right   : { normal : "┐", double : "╗", dashed : "╌", dotted : "┈", none : " " }
+            left    : { normal : "┌", double : "╔", dashed : "╌", dotted : "┈", none : "" },
+            right   : { normal : "┐", double : "╗", dashed : "╌", dotted : "┈", none : "" }
         },
         bottom: {
-            left    : { normal : "└", double : "╚", dashed : "╌", dotted : "┈", none : " " },
-            right   : { normal : "┘", double : "╝", dashed : "╌", dotted : "┈", none : " " }
+            left    : { normal : "└", double : "╚", dashed : "╌", dotted : "┈", none : "" },
+            right   : { normal : "┘", double : "╝", dashed : "╌", dotted : "┈", none : "" }
         }
     },
     T: {
-        upright     : { normal : "┬", double : "╦", dashed : "╌", dotted : "┈", none : " " },
-        upsideDown  : { normal : "┴", double : "╩", dashed : "╌", dotted : "┈", none : " " },
-        rotatedLeft : { normal : "├", double : "╠", dashed : "╎", dotted : "┊", none : " " },
-        rotatedRight: { normal : "┤", double : "╣", dashed : "╎", dotted : "┊", none : " " }
+        upright     : { normal : "┬", double : "╦", dashed : "╌", dotted : "┈", none : "" },
+        upsideDown  : { normal : "┴", double : "╩", dashed : "╌", dotted : "┈", none : "" },
+        rotatedLeft : { normal : "├", double : "╠", dashed : "╎", dotted : "┊", none : "" },
+        rotatedRight: { normal : "┤", double : "╣", dashed : "╎", dotted : "┊", none : "" }
     }
 } as const
 
@@ -120,7 +120,7 @@ function renderFsTreeFromPaths(
         if (depth > 2) return
         const ancestors = Array.from(Tree.ancestors(tree, value))
         const siblings = Tree.children(parent)
-        const lastInFolder = siblings.indexOf(value) === (siblings.length - 1)
+        const lastInFolder = value === siblings.at(-1)
         let structure = ''
 
         if (Tree.isNode(value)) {
@@ -132,7 +132,7 @@ function renderFsTreeFromPaths(
             const parent = ancestors[i-1]
             if (parent === undefined) return
             const siblings = Tree.children(parent)
-            const parentIsLastInFolder = siblings.indexOf(node) === (siblings.length - 1)
+            const parentIsLastInFolder = node === siblings.at(-1)
             if (parentIsLastInFolder) structure += '    '
             else                      structure += '│   '
         })
@@ -309,14 +309,14 @@ async function selectPaths(
             const ancestors = Array.from(Tree.ancestors(tree, value))
             if (ancestors.some(p => Tree.isNode(p) && openNodes.has(p) === false)) return
             const siblings = Tree.children(parent)
-            const lastInFolder = siblings.indexOf(value) === (siblings.length - 1)
+            const lastInFolder = value === siblings.at(-1)
             let structure = ''
     
             ancestors.reverse().forEach((node, i) => {
                 const parent = ancestors[i - 1]
                 if (parent === undefined) return
                 const siblings = Tree.children(parent)
-                const parentIsLastInFolder = siblings.indexOf(node) === (siblings.length - 1)
+                const parentIsLastInFolder = node === siblings.at(-1)
                 if (parentIsLastInFolder) structure += '    '
                 else                      structure += '│   '
             })
@@ -514,13 +514,13 @@ function renderTable(
     {
         border   = 'normal',
         padding  = 1,
-        maxWidth = Deno.consoleSize().columns
+        maxWidth = Deno.consoleSize().columns - 2
     }: Partial<TableFormatOptions> = {}
 ) {
     if (data.length > 0 === false) return ''
     
     const columnContentWidths = columnWidths(data)
-    const usableColumnWidths = shrinkWidths(columnContentWidths, maxWidth - (2 * padding * columnContentWidths.length) - 1)
+    const usableColumnWidths = shrinkWidths(columnContentWidths, maxWidth - (2 * padding * columnContentWidths.length) - columnContentWidths.length)
     const linedRows =
         data.map(row => {
             const rowLines = row.map((entry, i) => splitAtMaxWidth(entry, usableColumnWidths[i]))

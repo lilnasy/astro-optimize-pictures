@@ -3,7 +3,7 @@
 
 import app                 from './app.ts'
 import constants           from './constants.ts'
-import messages            from './messages.ts'
+import { message }         from './messages.ts'
 import * as CantContinue   from './cant continue.ts'
 import {
     style,
@@ -24,7 +24,6 @@ import type { HOT }        from './deps.ts'
 
 /***** TYPES *****/
 
-type Messages        = typeof messages
 type ReadyFun        = AppOptions['ready']
 type ReportErrorFun  = AppOptions['reportError']
 type ShowProgressFun = AppOptions['showProgress']
@@ -91,8 +90,8 @@ async function ready(
 
     async function menu() : Promise<void> {
         const action = await selectOneOf(summary() + '\n\n' + fsTree(), [
-            message('Start optimizing'),
-            message('Pick images'),
+            message('StartOptimizing'),
+            message('PickImages'),
             message('Configure'),
             message('Exit')
         ])
@@ -103,7 +102,7 @@ async function ready(
     }
 
     async function pickImages() {
-        const instructions = message('Interaction instructions')
+        const instructions = message('InteractionInstructions')
         pathMask = await selectPaths(
             instructions,
             sourcePaths.map(sourcePath => path.relative(cwd, sourcePath)),
@@ -178,24 +177,25 @@ async function reportError(
     }
 
     if (cantContinue instanceof CantContinue.CouldntTranscodeImage) {
-        const { errorLine, command, sourcePath, fullLog } = cantContinue
+        const { errorLine, command, sourcePath, logPromise } = cantContinue
                     
         const [ tempFile, log ] =
             await Promise.all([
                 Deno.makeTempFile({ suffix: '.txt' }),
-                fullLog
+                logPromise
             ])
         
         await Deno.writeTextFile(tempFile, log)
 
         return print([
+            lineBreak(),
             message('CouldntTranscodeImage', {
                 path         : style.blue(path.relative(cwd, sourcePath)),
                 command      : style.yellow(command),
                 output       : style.stripColor.red(errorLine),
                 logWrittenTo : style.blue(tempFile)
             }),
-            lineBreak(),
+            lineBreak()
         ])
     }
     throw new Error('report() called with invalid arguments', { cause: arguments })
@@ -220,7 +220,25 @@ async function showProgress(
     function render(_ ?: unknown) {
         const table =
             Object.entries(underwayOptimizations)
-            .map(([ source, destination ]) => [ path.relative(cwd, source), ' => ', path.relative(cwd, destination) ])
+            .map(([ source, destination ]) => {
+                
+                const sourcePath = path.relative(cwd, source)
+                const destinationPath = path.relative(cwd, destination)
+                
+                const maxColumnWidth = Math.floor((Deno.consoleSize().columns - 4) / 2)
+
+                const truncatedSourcePath =
+                    (sourcePath.length + 3) > maxColumnWidth
+                        ? '...' + sourcePath.slice(sourcePath.length + 3 - maxColumnWidth)
+                        : sourcePath
+                
+                const truncatedDestinationPath =
+                    (destinationPath.length + 3) > (maxColumnWidth / 2)
+                        ? '...' + destinationPath.slice(destinationPath.length + 3 - maxColumnWidth)
+                        : destinationPath
+
+                return [ truncatedSourcePath, ' => ', truncatedDestinationPath ]
+            })
         
         preview([ renderTable(table, { border: 'none', padding: 0 }) ])
     }
@@ -248,6 +266,9 @@ function showSummary(
                 typeof task.stat.size !== 'number'
             )
                 return style.red('failed')
+
+            if (task.stat.size === 0) 
+                throw new Error('Unexpected: task.stat.size === 0')
 
             const delta = task.stat.size / image.stat.size
             const smaller = delta < 1
@@ -278,26 +299,6 @@ function showSummary(
 }
 
 
-
-/***** TYPED MESSAGE TEMPLATES *****/
-
-function message<Topic extends keyof Messages>(
-    topic   : Topic,
-    details : Params<Messages[Topic]['en-US']> = {}
-) : string {
-    const template : string =
-        messages[topic][navigator.language as 'en-US'] ??
-        // fallback to english
-        messages[topic]['en-US']
-    
-    const message =
-        Object.entries(details as Record<string, string>)
-        .reduce(( mes, [ key, value ] ) => mes.replace(`{${key}}`, value), template)
-        
-    return message
-}
-
-
 /***** UTILITY FUNCTIONS *****/
 
 function readableFileSize(size : number) {
@@ -312,20 +313,3 @@ async function serializeResponse(response : Response) {
     const body = await response.text()
     return `${response.url}\n${response.status} ${response.statusText}\n${headers.join('\n')}\n\n${body}`
 }
-
-
-/***** UTILITY TYPES *****/
-
-type Params<Template> = Record<Variables<Template>, string>
-
-type Variables<Template> =
-    HOT.Pipe<
-        Template,
-        [
-            HOT.Strings.Split<'{'>,
-            HOT.Tuples.Tail,
-            HOT.Tuples.Map<HOT.Strings.Split<'}'>>,
-            HOT.Tuples.Map<HOT.Tuples.Head>,
-            HOT.Tuples.ToUnion
-        ]
-    >

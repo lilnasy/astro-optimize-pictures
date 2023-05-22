@@ -1,4 +1,12 @@
-export default {
+
+/***** IMPORTS *****/
+
+import type { HOT } from './deps.ts'
+
+
+/***** MAIN *****/
+
+const messages = {
     "CouldntConnectToInternet": {
         
         "en-US":
@@ -69,7 +77,7 @@ export default {
             "Prêt à optimiser {imageCount} images dans {folderCount} dossiers."
         
     },
-    "Start optimizing": {
+    "StartOptimizing": {
 
         "en-US":
             "Start optimizing",
@@ -78,7 +86,7 @@ export default {
             "Commencer l'optimisation"
         
     },
-    "Pick images": {
+    "PickImages": {
         
         "en-US":
             "Pick images to optimize",
@@ -105,13 +113,13 @@ export default {
             "Sortie"
         
     },
-    "Interaction instructions": {
+    "InteractionInstructions": {
         
         "en-US":
-            "Use the up and down keys to move the cursor, space to select or unselect an image or folder, and enter to continue.",
+            "Controls:\nUp and down keys to move the selection\nSpace to add or remove the selected folder or image\nEnter to continue",
         
         "fr-FR":
-            "Utilisez les touches haut et bas pour déplacer le curseur, l'espace pour sélectionner ou désélectionner une image ou un dossier, et entrée pour continuer."
+            "Contrôles:\nTouches haut et bas pour déplacer la sélection\nEspace pour ajouter ou supprimer le dossier ou l'image sélectionné\nEntrée pour continuer"
         
     },
     "AlreadyOptimized": {
@@ -124,3 +132,40 @@ export default {
 
     }
 } as const
+
+
+/***** TYPED MESSAGE TEMPLATES *****/
+
+export function message<Topic extends keyof typeof messages>(
+    topic   : Topic,
+    details : Params<typeof messages[Topic]['en-US']> = {}
+) : string {
+    const template : string =
+        messages[topic][navigator.language as 'en-US'] ??
+        // fallback to english
+        messages[topic]['en-US']
+    
+    const message =
+        Object.entries(details as Record<string, string>)
+        .reduce(( mes, [ key, value ] ) => mes.replace(`{${key}}`, value), template)
+        
+    return message
+}
+
+
+/***** UTILITY TYPES *****/
+
+type Params<Template> = Record<Variables<Template>, string>
+
+type Variables<Template> =
+    HOT.Pipe<
+        Template,
+        [
+            HOT.Strings.Split<'{'>,
+            HOT.Tuples.Tail,
+            HOT.Tuples.Map<HOT.Strings.Split<'}'>>,
+            HOT.Tuples.Map<HOT.Tuples.Head>,
+            HOT.Tuples.ToUnion
+        ]
+    >
+

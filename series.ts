@@ -22,9 +22,9 @@ interface Series<A> extends AsyncIterable<A> {
     toStream                  (queueingStrategy ?: QueuingStrategy<A>)            : ReadableStream<A>
 }
 
-function from<A>(source : Array<MaybePromise<A>> | AsyncIterable<A>) : Series<A> {
+function from<A>(source : Iterable<MaybePromise<A>> | AsyncIterable<A>) : Series<A> {
     
-    if (Array.isArray(source)) return from(arrayToAsyncIterable(source))
+    if (Symbol.iterator in source) return from(arrayToAsyncIterable(source))
     
     return {
         [Symbol.asyncIterator]    ()                                                  { return source[Symbol.asyncIterator]()      },
@@ -46,17 +46,16 @@ function from<A>(source : Array<MaybePromise<A>> | AsyncIterable<A>) : Series<A>
 /***** IMPLEMENTATIONS *****/
 
 function arrayToAsyncIterable<A>(
-    array : Array<MaybePromise<A>>
+    array : Iterable<MaybePromise<A>>
 ) : AsyncIterable<A> {
+    const sourceIterator = array[Symbol.iterator]()
     return {
         [Symbol.asyncIterator]() {
-            let i = 0
             return {
                 async next() {
-                    const element = array.at(i)
-                    if (element === undefined) return { done: true, value: undefined }
-                    i++
-                    return { done: false, value: await element }
+                    const { done, value } = sourceIterator.next()
+                    if (done) return { done, value: undefined }
+                    return { done: false, value: await value }
                 }
             }
         }

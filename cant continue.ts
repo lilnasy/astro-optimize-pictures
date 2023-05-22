@@ -45,6 +45,6 @@ export class CouldntTranscodeImage extends Error {
         readonly command    : string,
         readonly sourcePath : string,
         readonly errorLine  : string,
-        readonly fullLog    : PromiseLike<string>
+        readonly logPromise : Promise<string>
     ) { super() }
 }

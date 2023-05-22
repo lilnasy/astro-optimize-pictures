@@ -144,7 +144,7 @@ function fromPaths(
         let current = root
         for (let j = 0; j < pathParts.length; j++) {
             const part = pathParts[j]
-            if (j === pathParts.length - 1) current[part] = i
+            if (part === pathParts.at(-1)) current[part] = i
             // @ts-ignore this is fine
             else current = current[part] ??= {}
         }
