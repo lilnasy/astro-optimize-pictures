@@ -3,24 +3,23 @@ import getPicture from './get-picture'
 import manifest from './manifest'
 import type { HTMLAttributes } from 'astro/types'
 
-type NonEmptyArray<T> = [T, ...T[]]
+type Manifest = typeof manifest
 
 interface Props<
     ImageSrc extends keyof Manifest,
     Format extends Exclude<keyof Manifest[ImageSrc], 'original'>
-> extends Omit<HTMLAttributes<'img'>, 'alt' | 'src' | 'format' | 'width'> {
-    alt     : string
-    src     : ImageSrc
-    format ?: NonEmptyArray<Format>
-    width  ?: NonEmptyArray<keyof Manifest[ImageSrc][Format]>
-    pictureClass ?: string | undefined
+> extends Omit<HTMLAttributes<'img'>, 'alt' | 'src'> {
+    alt           : string
+    src           : ImageSrc
+    formats      ?: Array<Format>
+    widths       ?: Array<keyof Manifest[ImageSrc][Format]>
+    pictureClass ?: string
 }
 
 const {
 	src,
-	alt,
-	widths,
 	formats = [ 'jpeg', 'webp', 'avif' ],
+	widths,
 	loading = 'lazy',
 	decoding = 'async',
     pictureClass,

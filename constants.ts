@@ -28,7 +28,7 @@ export default {
         ],
         formats: {
             jpeg: { enabled: true, codec: 'mjpeg'   , quality : 15 , minimum: 2, maximum: 31  },
-            webp: { enabled: true, codec: 'libwebp' , quality : 30 , minimum: 0, maximum: 100 },
+            webp: { enabled: true, codec: 'libwebp' , quality : 40 , minimum: 0, maximum: 100 },
             avif: { enabled: true, codec: 'librav1e', quality : 150, minimum: 0, maximum: 255 }
         }
     }

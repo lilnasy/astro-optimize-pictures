@@ -71,10 +71,12 @@ export default async function app({ cwd, ready, reportError, showProgress, showS
     const optimizations = opts.filter(happy)
     
     await writeManifestFile(projectDetails, optimizations, manifestPath)
-    await Deno.copyFile(import.meta.resolve('./package/getImage.ts') , path.join(projectDetails.pkgPath, 'getImage.ts'))
-    await Deno.copyFile(import.meta.resolve('./package/Image.astro') , path.join(projectDetails.pkgPath, 'Image.astro'))
-    await Deno.copyFile(import.meta.resolve('./package/pacakge.json'), path.join(projectDetails.pkgPath, 'pacakge.json'))
-    await Deno.copyFile(import.meta.resolve('./package/index.ts')    , path.join(projectDetails.pkgPath, 'index.ts'))
+    await Deno.copyFile(new URL(import.meta.resolve('./package/get-image.ts'  )).pathname, path.join(projectDetails.pkgPath, 'get-image.ts'))
+    await Deno.copyFile(new URL(import.meta.resolve('./package/get-picture.ts')).pathname, path.join(projectDetails.pkgPath, 'get-picture.ts'))
+    await Deno.copyFile(new URL(import.meta.resolve('./package/Image.astro'   )).pathname, path.join(projectDetails.pkgPath, 'Image.astro'))
+    await Deno.copyFile(new URL(import.meta.resolve('./package/Picture.astro' )).pathname, path.join(projectDetails.pkgPath, 'Picture.astro'))
+    await Deno.copyFile(new URL(import.meta.resolve('./package/package.json'  )).pathname, path.join(projectDetails.pkgPath, 'package.json'))
+    await Deno.copyFile(new URL(import.meta.resolve('./package/index.ts'      )).pathname, path.join(projectDetails.pkgPath, 'index.ts'))
 
     // TODO happy exit message
 }

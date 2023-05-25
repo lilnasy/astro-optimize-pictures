@@ -1,4 +1,4 @@
-export function getImage(
+export default function getImage(
     manifest : Record<string, unknown>,
     { src, format, width } : Record<string, unknown>
 ) : string {

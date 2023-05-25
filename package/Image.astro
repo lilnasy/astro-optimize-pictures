@@ -8,14 +8,22 @@ type Manifest = typeof manifest
 interface Props<
     ImageSrc extends keyof Manifest,
     Format extends Exclude<keyof Manifest[ImageSrc], 'original'>
-> extends Omit<HTMLAttributes<'img'>, 'alt' | 'src' | 'format' | 'width'> {
+> extends Omit<HTMLAttributes<'img'>, 'alt' | 'src' | 'width'> {
     alt     : string
     src     : ImageSrc
     format ?: Format
     width  ?: keyof Manifest[ImageSrc][Format]
 }
 
-const { src, format, width, ...rest } = Astro.props
+const {
+    src,
+    format,
+    width,
+    loading = 'lazy',
+	decoding = 'async',
+    ...rest
+} = Astro.props
+
 const resolvedSrc = getImage(manifest, { src, format, width })
 ---
-<img src={ resolvedSrc } { alt } { ...rest }/>
+<img src={ resolvedSrc } { loading } { decoding } { ...rest }/>
