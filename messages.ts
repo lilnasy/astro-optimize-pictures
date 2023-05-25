@@ -19,10 +19,20 @@ const messages = {
     "CouldntDownloadFfmpeg": {
         
         "en-US":
-            "{projectName} uses ffmpeg to process images.\nDownloading ffmpeg for your computer failed.\n\nThis was the response sent by the server:\n{response}.\n\nYou could try manually installing ffmpeg.",
+            "{packageName} uses ffmpeg to process images.\nDownloading ffmpeg for your computer failed.\n\nThis was the response sent by the server:\n{response}.\n\nYou could try manually installing ffmpeg.",
         
         "fr-FR":
-            "{projectName} utilise ffmpeg pour traiter les images.\nTéléchargement de ffmpeg pour votre ordinateur a échoué.\n\nVoici la réponse envoyée par le serveur:\n{response}.\n\nVous pouvez essayer d'installer manuellement ffmpeg."        
+            "{packageName} utilise ffmpeg pour traiter les images.\nTéléchargement de ffmpeg pour votre ordinateur a échoué.\n\nVoici la réponse envoyée par le serveur:\n{response}.\n\nVous pouvez essayer d'installer manuellement ffmpeg."
+        
+    },
+    "CouldntWriteFfmpegToDisk": {
+        
+        "en-US":
+            "{packageName} uses ffmpeg to process images.\nDownloading ffmpeg was successful, but saving it to disk failed.\n\nThis was the error that prevented ffmpeg from being written to {writingAt}:\n{error}\n\nYou could try manually installing ffmpeg.",
+        
+        "fr-FR":
+            "{packageName} utilise ffmpeg pour traiter les images.\nLe téléchargement de ffmpeg a réussi, mais son enregistrement sur disque a échoué.\n\nVoici l'erreur qui a empêché ffmpeg d'être écrit à {writingAt}:\n{error}\n\nVous pouvez essayer d'installer manuellement ffmpeg."
+        
     },
     "CouldntFindAstroConfigFile": {
         
@@ -40,24 +50,24 @@ const messages = {
         
         "fr-FR":
             "Obtenir des informations pour {path} à partir de la sortie de ffmpeg a échoué.\n\nLa commande complète exécutée était:\n{command}\n\nLa sortie de ffmpeg était:\n{output}"
+        
     },
     "CouldntTranscodeImage": {
         
         "en-US":
-            "Transcoding {path} failed.\n\nThe full command run was:\n{command}\n\nffmpeg's output was:\n{output}\n\nComplete log written to {logWrittenTo}.",
+            "Transcoding {path} failed.\n\nffmpeg's output was:\n{output}\n\nComplete log written to {logWrittenTo}.",
         
         "fr-FR":
-            "Transcodage de {path} a échoué.\n\nLa commande complète exécutée était:\n{command}\n\nLa sortie de ffmpeg était:\n{output}\n\nJournal complet écrit à {logWrittenTo}."
+            "Transcodage de {path} a échoué.\n\nLa sortie de ffmpeg était:\n{output}\n\nJournal complet écrit à {logWrittenTo}."
         
     },
-    "CouldntWriteFfmpegToDisk": {
-        
+    "NoteAboutFailedOptimizations": {
+
         "en-US":
-            "{projectName} uses ffmpeg to process images.\nDownloading ffmpeg was successful, but saving it to disk failed.\n\nThis was the error that prevented ffmpeg from being written to disk:\n{error}\n\nYou could try manually installing ffmpeg.",
+            "Optimized versions of the images that failed to transcode will not be available in your project.\n\nYou can rerun {packageName} to try again. Only the failed optimizations will be retried.",
         
         "fr-FR":
-            "{projectName} utilise ffmpeg pour traiter les images.\nTéléchargement de ffmpeg a réussi, mais son enregistrement sur le disque a échoué.\n\nVoici l'erreur qui a empêché ffmpeg d'être écrit sur le disque:\n{error}\n\nVous pouvez essayer d'installer manuellement ffmpeg."
-        
+            "Les versions optimisées des images qui n'ont pas réussi à transcoder ne seront pas disponibles dans votre projet.\n\nVous pouvez relancer {packageName} pour réessayer. Seules les optimisations échouées seront réessayées."
     },
     "FindingImages": {
         
@@ -168,4 +178,3 @@ type Variables<Template> =
             HOT.Tuples.ToUnion
         ]
     >
-

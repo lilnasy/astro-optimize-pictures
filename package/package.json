@@ -1,0 +1,4 @@
+{
+    "name": "totally a real package :)",
+    "description": "This file only exists so that Vite doesn't consider the inclusion of this package 'most likely unintended because it can break your application at runtime.'"
+}

@@ -35,16 +35,15 @@ export class CouldntDownloadFfmpeg extends Error {
 
 export class CouldntWriteFfmpegToDisk extends Error {
     constructor(
-        readonly writingAt : string,
-        readonly error     : Error
+        readonly error     : Error,
+        readonly writingAt : string
     ) { super() }
 }
 
 export class CouldntTranscodeImage extends Error {
     constructor(
-        readonly command    : string,
         readonly sourcePath : string,
         readonly errorLine  : string,
-        readonly logPromise : Promise<string>
+        readonly log        : ReadableStream<string>
     ) { super() }
 }

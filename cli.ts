@@ -19,7 +19,6 @@ import {
 import { path }            from './deps.ts'
 
 import type { AppOptions } from './app.ts'
-import type { HOT }        from './deps.ts'
 
 
 /***** TYPES *****/
@@ -33,6 +32,8 @@ type ShowSummaryFun  = AppOptions['showSummary']
 /***** STATE *****/
 
 const underwayOptimizations : Record<string, string> = {}
+let maxUnderwayOptimizations = 0
+const failedOptimizationMessages = new Array<string>
 
 
 /***** ENTRYPOINT *****/
@@ -121,8 +122,8 @@ async function ready(
 reportError satisfies ReportErrorFun
 async function reportError(
     cantContinue : Parameters<ReportErrorFun>[0],
-) : Promise<void> {
-    const { projectName } = constants
+) : Promise<unknown> {
+    const { packageName } = constants
     
     if (cantContinue instanceof CantContinue.CouldntFindAstroConfigFile) {
         return print([
@@ -140,6 +141,7 @@ async function reportError(
     if (cantContinue instanceof CantContinue.CouldntConnectToInternet) {
         const { error, url } = cantContinue
         return print([
+            lineBreak(),
             message('CouldntConnectToInternet', {
                 url,
                 message: style.red(error.message)
@@ -150,8 +152,9 @@ async function reportError(
 
     if (cantContinue instanceof CantContinue.CouldntDownloadFfmpeg) {
         return print([
+            lineBreak(),
             message('CouldntDownloadFfmpeg', {
-                projectName,
+                packageName,
                 response: await serializeResponse(cantContinue.response)
             }),
             lineBreak()
@@ -160,9 +163,11 @@ async function reportError(
 
     if (cantContinue instanceof CantContinue.CouldntWriteFfmpegToDisk) {
         return print([
+            lineBreak(),
             message('CouldntWriteFfmpegToDisk', {
-                projectName,
-                error : style.red(cantContinue.error.message)
+                packageName,
+                error: style.red(cantContinue.error.message),
+                writingAt: style.blue(cantContinue.writingAt)
             }),
             lineBreak()
         ])
@@ -171,32 +176,37 @@ async function reportError(
     if (cantContinue instanceof CantContinue.CouldntParseImageInfo) {
         const { path, command, output } = cantContinue
         return print([
+            lineBreak(),
             message('CouldntParseImageInfo', { path, command, output }),
             lineBreak()
         ])
     }
 
     if (cantContinue instanceof CantContinue.CouldntTranscodeImage) {
-        const { errorLine, command, sourcePath, logPromise } = cantContinue
+        const { errorLine, sourcePath, log } = cantContinue
                     
-        const [ tempFile, log ] =
-            await Promise.all([
-                Deno.makeTempFile({ suffix: '.txt' }),
-                logPromise
-            ])
+        const tempFilePath = await Deno.makeTempFile({ suffix: '.txt' })
+        const tempFileHandler = await Deno.open(tempFilePath, { write: true })
         
-        await Deno.writeTextFile(tempFile, log)
+        await log.pipeThrough(new TextEncoderStream).pipeTo(tempFileHandler.writable)
 
-        return print([
-            lineBreak(),
+        failedOptimizationMessages.push(
             message('CouldntTranscodeImage', {
                 path         : style.blue(path.relative(cwd, sourcePath)),
-                command      : style.yellow(command),
                 output       : style.stripColor.red(errorLine),
-                logWrittenTo : style.blue(tempFile)
-            }),
-            lineBreak()
-        ])
+                logWrittenTo : style.blue(tempFilePath)
+            })
+        )
+
+        const line = lineBreak()
+
+        return globalThis.onunload ??= () =>
+            print([
+                line,
+                ...failedOptimizationMessages.flatMap(message => [ message, line ]),
+                message('NoteAboutFailedOptimizations', { packageName }),
+                line
+            ])
     }
     throw new Error('report() called with invalid arguments', { cause: arguments })
 }
@@ -218,6 +228,13 @@ async function showProgress(
     }))
 
     function render(_ ?: unknown) {
+        
+        maxUnderwayOptimizations =
+            Math.max(maxUnderwayOptimizations, Object.keys(underwayOptimizations).length)
+
+        const extraRows =
+            Array.from({ length: maxUnderwayOptimizations - Object.keys(underwayOptimizations).length }, () => ['', '', ''])
+
         const table =
             Object.entries(underwayOptimizations)
             .map(([ source, destination ]) => {
@@ -225,7 +242,7 @@ async function showProgress(
                 const sourcePath = path.relative(cwd, source)
                 const destinationPath = path.relative(cwd, destination)
                 
-                const maxColumnWidth = Math.floor((Deno.consoleSize().columns - 4) / 2)
+                const maxColumnWidth = Math.floor((Deno.consoleSize().columns - 8) / 2)
 
                 const truncatedSourcePath =
                     (sourcePath.length + 3) > maxColumnWidth
@@ -233,12 +250,12 @@ async function showProgress(
                         : sourcePath
                 
                 const truncatedDestinationPath =
-                    (destinationPath.length + 3) > (maxColumnWidth / 2)
+                    (destinationPath.length + 3) > maxColumnWidth
                         ? '...' + destinationPath.slice(destinationPath.length + 3 - maxColumnWidth)
                         : destinationPath
 
                 return [ truncatedSourcePath, ' => ', truncatedDestinationPath ]
-            })
+            }).concat(extraRows)
         
         preview([ renderTable(table, { border: 'none', padding: 0 }) ])
     }
@@ -249,10 +266,9 @@ function showSummary(
     image : Parameters<ShowSummaryFun>[0],
     tasks : Parameters<ShowSummaryFun>[1]
 ) {
-    
     const title   = path.relative(cwd, image.sourcePath) + ' (' + readableFileSize(image.stat.size) + ')'
     const formats = Array.from(new Set(tasks.map(task => task.format)))
-    const widths  = Array.from(new Set(tasks.map(task => task.width)))
+    const widths  = Array.from(new Set(tasks.map(task => task.width))).sort((a, b) => a - b)
     const header  = [ 'Widths\\Formats', ...formats.map(String) ]
     const rows    = widths.map(width => [
         String(width),

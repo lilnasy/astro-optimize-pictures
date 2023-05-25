@@ -1,0 +1,36 @@
+---
+import getPicture from './get-picture'
+import manifest from './manifest'
+import type { HTMLAttributes } from 'astro/types'
+
+type NonEmptyArray<T> = [T, ...T[]]
+
+interface Props<
+    ImageSrc extends keyof Manifest,
+    Format extends Exclude<keyof Manifest[ImageSrc], 'original'>
+> extends Omit<HTMLAttributes<'img'>, 'alt' | 'src' | 'format' | 'width'> {
+    alt     : string
+    src     : ImageSrc
+    format ?: NonEmptyArray<Format>
+    width  ?: NonEmptyArray<keyof Manifest[ImageSrc][Format]>
+    pictureClass ?: string | undefined
+}
+
+const {
+	src,
+	alt,
+	widths,
+	formats = [ 'jpeg', 'webp', 'avif' ],
+	loading = 'lazy',
+	decoding = 'async',
+    pictureClass,
+	...attrs
+} = Astro.props
+
+const sources = getPicture(manifest, { src, widths, formats })
+const fallbackImgSrc = getImage(manifest, { src, format: 'jpeg' })
+---
+<picture class={ pictureClass }>
+	{ sources.map(srcAttrs => <source { ...srcAttrs }/>) }
+	<img src={ fallbackImgSrc } { loading } { decoding } { ...attrs } />
+</picture>

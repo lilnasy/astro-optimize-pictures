@@ -1,0 +1,21 @@
+---
+import getImage from './get-image'
+import manifest from './manifest'
+import type { HTMLAttributes } from 'astro/types'
+
+type Manifest = typeof manifest
+
+interface Props<
+    ImageSrc extends keyof Manifest,
+    Format extends Exclude<keyof Manifest[ImageSrc], 'original'>
+> extends Omit<HTMLAttributes<'img'>, 'alt' | 'src' | 'format' | 'width'> {
+    alt     : string
+    src     : ImageSrc
+    format ?: Format
+    width  ?: keyof Manifest[ImageSrc][Format]
+}
+
+const { src, format, width, ...rest } = Astro.props
+const resolvedSrc = getImage(manifest, { src, format, width })
+---
+<img src={ resolvedSrc } { alt } { ...rest }/>

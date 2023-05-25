@@ -520,7 +520,7 @@ function renderTable(
     if (data.length > 0 === false) return ''
     
     const columnContentWidths = columnWidths(data)
-    const usableColumnWidths = shrinkWidths(columnContentWidths, maxWidth - (2 * padding * columnContentWidths.length) - columnContentWidths.length)
+    const usableColumnWidths = shrinkWidths(columnContentWidths, maxWidth - (2 * padding * columnContentWidths.length) - columnContentWidths.length - 1)
     const linedRows =
         data.map(row => {
             const rowLines = row.map((entry, i) => splitAtMaxWidth(entry, usableColumnWidths[i]))
@@ -567,7 +567,14 @@ function renderTable(
             ).map(line => box.line.vertical[border] + line + box.line.vertical[border])
         )
 
-    const middle = rows.map(rowLines => rowLines.join('\n')).join('\n' + rowSeparator + '\n')
+    const middle =
+        rows
+        .map(rowLines => rowLines.join('\n'))
+        .join(
+            border === 'none'
+                ? '\n'
+                : '\n' + rowSeparator + '\n'
+        )
 
     return topBorder + '\n' + middle + '\n' + bottomBorder
 }
