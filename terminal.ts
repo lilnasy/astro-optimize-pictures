@@ -353,7 +353,7 @@ async function selectTranscodeOptions(
     options : TranscodeOptions
 ) : Promise<TranscodeOptions> {
 
-    let focused : 'widths' | 'formats' | 'qualities'
+    let focusedSection : 'widths' | 'formats' | 'qualities'
     let focusedWidth   = 0
     let focusedFormat  : keyof typeof options.formats = 'jpeg'
     let focusedQuality : keyof typeof options.formats = 'jpeg'
@@ -366,7 +366,7 @@ async function selectTranscodeOptions(
     return options
 
     function selectWidths(): Promise<unknown> {
-        render(focused = 'widths')
+        render(focusedSection = 'widths')
         return onKeyPress({
             left  : () => render(focusedWidth = Math.max(0, focusedWidth - 1)),
             right : () => render(focusedWidth = Math.min(options.widths.length - 1, focusedWidth + 1)),
@@ -377,7 +377,7 @@ async function selectTranscodeOptions(
     }
 
     function selectFormats(): Promise<unknown> {
-        render(focused = 'formats')
+        render(focusedSection = 'formats')
         return onKeyPress({
             up    : selectWidths,
             left  : () => render(focusedFormat = focusedFormat === 'avif' ? 'webp' : 'jpeg'),
@@ -389,7 +389,7 @@ async function selectTranscodeOptions(
     }
 
     function selectQualities(): Promise<unknown> {
-        render(focused = 'qualities')
+        render(focusedSection = 'qualities')
         return onKeyPress({
             up: () => {
                 if (focusedQuality === 'jpeg') return selectFormats()
@@ -416,35 +416,35 @@ async function selectTranscodeOptions(
         clear()
         let output = '\n'
 
-        const widthsTitle = (focused === 'widths'  ? style.bold.underline : style.bold)('widths')
+        const widthsTitle = (focusedSection === 'widths'  ? style.bold.underline : style.bold)('widths')
         const widthsBody = options.widths.map(({ width , enabled }, i) => {
             const classes = {
-                dim          : !enabled && (focused !== 'widths' || focusedWidth !== i),
+                dim          : !enabled && (focusedSection !== 'widths' || focusedWidth !== i),
                 strikethrough: !enabled,
-                inverse      : focused === 'widths' && focusedWidth === i
+                inverse      : focusedSection === 'widths' && focusedWidth === i
             }
             return (enabled ? '✓ ' : '✗ ') + style(String(width).padEnd(4), classes)
         })
         output += widthsTitle + '\n    ' + widthsBody.join('    ') + '\n\n'
 
-        const formatsTitle = (focused === 'formats' ? style.bold.underline : style.bold)('formats')
+        const formatsTitle = (focusedSection === 'formats' ? style.bold.underline : style.bold)('formats')
         const formatsBody  = Object.keys(options.formats).map(format_ => {
             const format  = format_ as keyof typeof options.formats
             const enabled = options.formats[format].enabled
             const classes = {
-                inverse      : focused === 'formats' && focusedFormat === format,
+                inverse      : focusedSection === 'formats' && focusedFormat === format,
                 strikethrough: !enabled,
-                dim          : !enabled && (focused !== 'formats' || focusedFormat !== format)
+                dim          : !enabled && (focusedSection !== 'formats' || focusedFormat !== format)
             }
             return (enabled ? '✓ ' : '✗ ') + style(format, classes)
         })
         output += formatsTitle + '\n    ' + formatsBody.join('    ') + '\n\n'
         
-        const qualitiesTitle = (focused === 'qualities' ? style.bold.underline : style.bold)('qualities')
+        const qualitiesTitle = (focusedSection === 'qualities' ? style.bold.underline : style.bold)('qualities')
         const qualitiesBody  = Object.keys(options.formats).map(format_ => {
             const format = format_ as keyof typeof options.formats
             const { enabled, quality, minimum, maximum } = options.formats[format]
-            const focusedOnFormat = focused === 'qualities' && focusedQuality === format
+            const focusedOnFormat = focusedSection === 'qualities' && focusedQuality === format
             const qualityTitle = (focusedOnFormat ? style.underline : style)(format)
             const qualityText  = (focusedOnFormat ? style.inverse   : style)(String(quality))
 
@@ -458,7 +458,7 @@ async function selectTranscodeOptions(
                     )
             
             const classes = {
-                dim          : !enabled && (focused !== 'qualities' || focusedQuality !== format),
+                dim          : !enabled && (focusedSection !== 'qualities' || focusedQuality !== format),
                 strikethrough: !enabled
             }
             
@@ -526,14 +526,12 @@ function renderTable(
             const rowLines = row.map((entry, i) => splitAtMaxWidth(entry, usableColumnWidths[i]))
             const rowHeight = padding * 2 + rowLines.reduce((max, lines) => lines.length > max ? lines.length : max, 0)
             const paddedLines =
-                rowLines.map((lines, i) => 
-                    Array.from({ length: Math.floor((rowHeight - lines.length) / 2) }, _ => ' '.repeat(usableColumnWidths[i] + 2 * padding))
-                    .concat(
-                        lines.map(line => ' '.repeat(padding) + line + ' '.repeat(usableColumnWidths[i] - style.stripColor(line).length) + ' '.repeat(padding))
-                    ).concat(
-                        Array.from({ length: Math.ceil((rowHeight - lines.length) / 2) }, _ => ' '.repeat(usableColumnWidths[i] + 2 * padding))
-                    )
-                )
+                rowLines.map((lines, i) => {
+                    const balancingWhitespaceTop    = Array.from({ length: Math.floor((rowHeight - lines.length) / 2) }, _ => ' '.repeat(usableColumnWidths[i] + 2 * padding))
+                    const balancingWhitespaceBottom = Array.from({ length: Math.ceil( (rowHeight - lines.length) / 2) }, _ => ' '.repeat(usableColumnWidths[i] + 2 * padding))
+                    const content = lines.map(line => ' '.repeat(padding) + line + ' '.repeat(usableColumnWidths[i] - style.stripColor(line).length) + ' '.repeat(padding))
+                    return balancingWhitespaceTop.concat(content, balancingWhitespaceBottom)
+                })
             return paddedLines
         })
     

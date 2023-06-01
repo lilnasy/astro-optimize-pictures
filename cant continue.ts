@@ -1,6 +1,7 @@
 export type Any =
     | CouldntFindAstroConfigFile
     | CouldntParseImageInfo
+    | FfmpegNotAvailableForPlatform
     | CouldntConnectToInternet
     | CouldntDownloadFfmpeg
     | CouldntWriteFfmpegToDisk
@@ -20,6 +21,13 @@ export class CouldntParseImageInfo extends Error {
     ) { super() }
 }
 
+export class FfmpegNotAvailableForPlatform extends Error {
+    constructor(
+        readonly platform : string,
+        readonly availablePlatforms : Array<string>
+    ) { super() }
+}
+
 export class CouldntConnectToInternet extends Error {
     constructor(
         readonly url   : string,
@@ -29,6 +37,7 @@ export class CouldntConnectToInternet extends Error {
 
 export class CouldntDownloadFfmpeg extends Error {
     constructor(
+        readonly url      : string,
         readonly response : Response
     ) { super() }
 }

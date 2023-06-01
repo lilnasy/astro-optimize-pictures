@@ -150,12 +150,25 @@ async function reportError(
         ])
     }
 
+    if (cantContinue instanceof CantContinue.FfmpegNotAvailableForPlatform) {
+        return print([
+            lineBreak(),
+            message('FfmpegNotAvailableForPlatform', {
+                packageName,
+                platform: style.red(cantContinue.platform),
+                availablePlatforms: cantContinue.availablePlatforms.map(x => style.blue(x)).join(', ')
+            }),
+            lineBreak()
+        ])
+    }
+
     if (cantContinue instanceof CantContinue.CouldntDownloadFfmpeg) {
         return print([
             lineBreak(),
             message('CouldntDownloadFfmpeg', {
                 packageName,
-                response: await serializeResponse(cantContinue.response)
+                response: await serializeResponse(cantContinue.response),
+                url: style.blue(cantContinue.url)
             }),
             lineBreak()
         ])
@@ -208,7 +221,7 @@ async function reportError(
                 line
             ])
     }
-    throw new Error('report() called with invalid arguments', { cause: arguments })
+    throw new Error('reportError() called with invalid arguments', { cause: arguments })
 }
 
 

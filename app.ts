@@ -1,10 +1,10 @@
 
 /***** IMPORTS *****/
 
-import constants                         from './constants.ts'
-import Series                            from './series.ts'
-import * as CantContinue                 from './cant continue.ts'
-import { $, fs, path, which, partition } from './deps.ts'
+import constants                  from './constants.ts'
+import Series                     from './series.ts'
+import * as CantContinue          from './cant continue.ts'
+import { $, fs, path, partition } from './deps.ts'
 
 
 /***** TYPES *****/
@@ -52,7 +52,7 @@ export default async function app({ cwd, ready, reportError, showProgress, showS
     const allImages      = await searchForImages(projectDetails.srcDir).toArray()
     
     const { selectedImages, widths, formats } =
-        await ready(allImages, structuredClone(constants.transcoding))
+        await ready(allImages, structuredClone(constants.transcodeOptions))
     
     const ffmpeg = await ffmpegPromise
 
@@ -170,8 +170,8 @@ async function writeManifestFile(
         
         const sourceSpecifier =
             Deno.build.os === 'windows'
-                ? '../' + path.relative(projectDetails.rootDir, imageInfo.sourcePath).replaceAll('\\', '/')
-                : '../' + path.relative(projectDetails.rootDir, imageInfo.sourcePath)
+                ? path.relative(projectDetails.pkgPath, imageInfo.sourcePath).replaceAll('\\', '/')
+                : path.relative(projectDetails.pkgPath, imageInfo.sourcePath)
 
         const imageSrc =
             Deno.build.os === 'windows'
@@ -535,7 +535,6 @@ async function searchForFfmpeg(
     
     const ffmpegPath =
         await checkFfmpegEnvironmentVariable() ??
-        await which('ffmpeg') ??
         await downloadFfmpeg(tempFfmpegPath)
     
     if (happy(ffmpegPath)) localStorage.setItem('ffmpeg path', ffmpegPath)
@@ -555,18 +554,32 @@ async function downloadFfmpeg(
     ffmpegPath: string
 ): Promise<
     | string
+    | CantContinue.FfmpegNotAvailableForPlatform
     | CantContinue.CouldntConnectToInternet
     | CantContinue.CouldntDownloadFfmpeg
     | CantContinue.CouldntWriteFfmpegToDisk
 > {
-    const url            = constants.ffmpeg.downloadUrl.windows.x64
+    const { os, arch } = Deno.build
+    const url          = constants.ffmpeg.downloadLink[os as 'linux']?.[arch as 'x86_64']
+    
+    if (url === undefined) {
+        
+        const platform = os + ' ' + arch
+        
+        const availablePlatforms =
+            Object.entries(constants.ffmpeg.downloadLink)
+            .flatMap(([os, archs]) => Object.keys(archs).map(arch => os + ' ' + arch))
+        
+        return new CantContinue.FfmpegNotAvailableForPlatform(platform, availablePlatforms)
+    }
+    
     const ffmpegResponse = await fetch(url).catch(error => error as Error)
 
     if (unhappy(ffmpegResponse))
         return new CantContinue.CouldntConnectToInternet(url, ffmpegResponse)
 
     if (ffmpegResponse.ok === false)
-        return new CantContinue.CouldntDownloadFfmpeg(ffmpegResponse)
+        return new CantContinue.CouldntDownloadFfmpeg(url, ffmpegResponse)
     
     try {
         const ffmpegFileHandler = await Deno.open(ffmpegPath, { create: true, write: true })
@@ -627,9 +640,9 @@ async function safeStat(path : string | URL) {
     }
     catch (error) {
         if (error instanceof Deno.errors.NotFound)
-        return null
+            return null
         else
-        throw error
+            throw error
     }
 }
 

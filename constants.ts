@@ -3,18 +3,20 @@ export default {
     optimizedFolderName: '_optimized_images',
     ffmpeg: {
         env: 'FFMPEG_PATH',
-        downloadUrl: {
-            windows: {
-                x64: 'https://evermeet.cx/pub/ffmpeg/ffmpeg-6.0.zip'
-            },
+        downloadLink: {
             linux: {
-                x64: 'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2023-04-09-12-46/ffmpeg-n6.0-12-ga6dc92968a-linux64-gpl-6.0.tar.xz',
-                arm: 'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2023-04-09-12-46/ffmpeg-n6.0-12-ga6dc92968a-linuxarm64-gpl-6.0.tar.xz'
+                x86_64: 'https://github.com/lilnasy/ffmpeg-actions/releases/download/ffmpeg-2023-05-30-19-42/ffmpeg-linux-x86_64',
+            },
+            windows: {
+                x86_64: 'https://github.com/lilnasy/ffmpeg-actions/releases/download/ffmpeg-2023-05-30-19-42/ffmpeg-windows-x86_64.exe'
+            },
+            darwin: {
+                x86_64: 'https://github.com/lilnasy/ffmpeg-actions/releases/download/ffmpeg-2023-05-30-19-42/ffmpeg-macos-x86_64'
             }
         }
     },
     considerForOptimization : [ 'png', 'jpeg', 'jpg', 'avif', 'webp' ],
-    transcoding: {
+    transcodeOptions: {
         widths: [
             { width: 100 , enabled: true  },
             { width: 256 , enabled: true  },

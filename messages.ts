@@ -7,6 +7,15 @@ import type { HOT } from './deps.ts'
 /***** MAIN *****/
 
 const messages = {
+    "FfmpegNotAvailableForPlatform": {
+
+        "en-US":
+            "{packageName} uses ffmpeg to process images. A build of ffmpeg is not available for your platform ({platform}).\n\n{packageName} provides builds for these platforms:\n{availablePlatforms}\n\nPlease create a github issue if you think your platform should be supported.",
+        
+        "fr-FR":
+            "{packageName} utilise ffmpeg pour traiter les images. Une version de ffmpeg n'est pas disponible pour votre plate-forme ({platform}).\n\n{packageName} fournit des versions pour ces plateformes:\n{availablePlatforms}\n\nVeuillez créer un github issue si vous pensez que votre plate-forme devrait être prise en charge."
+        
+    },
     "CouldntConnectToInternet": {
         
         "en-US":
@@ -19,19 +28,19 @@ const messages = {
     "CouldntDownloadFfmpeg": {
         
         "en-US":
-            "{packageName} uses ffmpeg to process images.\nDownloading ffmpeg for your computer failed.\n\nThis was the response sent by the server:\n{response}.\n\nYou could try manually installing ffmpeg.",
+            "{packageName} uses ffmpeg to process images. Downloading ffmpeg from {url} failed.\n\nThis was the response sent by the server:\n{response}\n\nAre you able to access that url in a browser?",
         
         "fr-FR":
-            "{packageName} utilise ffmpeg pour traiter les images.\nTéléchargement de ffmpeg pour votre ordinateur a échoué.\n\nVoici la réponse envoyée par le serveur:\n{response}.\n\nVous pouvez essayer d'installer manuellement ffmpeg."
+            "{packageName} utilise ffmpeg pour traiter les images. Le téléchargement de ffmpeg à partir de {url} a échoué.\n\nVoici la réponse envoyée par le serveur:\n{response}\n\nÊtes-vous en mesure d'accéder à cette url dans un navigateur?"
         
     },
     "CouldntWriteFfmpegToDisk": {
         
         "en-US":
-            "{packageName} uses ffmpeg to process images.\nDownloading ffmpeg was successful, but saving it to disk failed.\n\nThis was the error that prevented ffmpeg from being written to {writingAt}:\n{error}\n\nYou could try manually installing ffmpeg.",
+            "{packageName} uses ffmpeg to process images. Downloading ffmpeg was successful, but saving it to disk failed.\n\nThis was the error that prevented ffmpeg from being written to {writingAt}:\n{error}\n\nPlease create a github issue.",
         
         "fr-FR":
-            "{packageName} utilise ffmpeg pour traiter les images.\nLe téléchargement de ffmpeg a réussi, mais son enregistrement sur disque a échoué.\n\nVoici l'erreur qui a empêché ffmpeg d'être écrit à {writingAt}:\n{error}\n\nVous pouvez essayer d'installer manuellement ffmpeg."
+            "{packageName} utilise ffmpeg pour traiter les images. Le téléchargement de ffmpeg a réussi, mais son enregistrement sur disque a échoué.\n\nVoici l'erreur qui a empêché ffmpeg d'être écrit à {writingAt}:\n{error}\n\nVeuillez créer un github issue."
         
     },
     "CouldntFindAstroConfigFile": {
