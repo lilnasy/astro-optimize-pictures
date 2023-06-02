@@ -7,8 +7,26 @@ import type { HOT } from './deps.ts'
 /***** MAIN *****/
 
 const messages = {
+    "CouldntFindAstroConfigFile": {
+        
+        "en-US":
+            "Could not find astro configuration file after looking at these paths:\n{checkedPaths}\n\nAre you running this command inside your project?",
+        
+        "fr-FR":
+            "Impossible de trouver le fichier de configuration astro après avoir examiné ces chemins:\n{checkedPaths}\n\nExécutez-vous cette commande à l'intérieur de votre projet?"
+        
+    },
+    "CouldntParseImageInfo": {
+        
+        "en-US":
+            "Getting information for {path} from ffmpeg's output failed.\n\nThe full command run was:\n{command}\n\nffmpeg's output was:\n{output}",
+        
+        "fr-FR":
+            "Obtenir des informations pour {path} à partir de la sortie de ffmpeg a échoué.\n\nLa commande complète exécutée était:\n{command}\n\nLa sortie de ffmpeg était:\n{output}"
+        
+    },
     "FfmpegNotAvailableForPlatform": {
-
+        
         "en-US":
             "{packageName} uses ffmpeg to process images. A build of ffmpeg is not available for your platform ({platform}).\n\n{packageName} provides builds for these platforms:\n{availablePlatforms}\n\nPlease create a github issue if you think your platform should be supported.",
         
@@ -43,24 +61,6 @@ const messages = {
             "{packageName} utilise ffmpeg pour traiter les images. Le téléchargement de ffmpeg a réussi, mais son enregistrement sur disque a échoué.\n\nVoici l'erreur qui a empêché ffmpeg d'être écrit à {writingAt}:\n{error}\n\nVeuillez créer un github issue."
         
     },
-    "CouldntFindAstroConfigFile": {
-        
-        "en-US":
-            "Could not find astro configuration file after looking at these paths:\n{checkedPaths}\n\nAre you running this command inside your project?",
-        
-        "fr-FR":
-            "Impossible de trouver le fichier de configuration astro après avoir examiné ces chemins:\n{checkedPaths}\n\nExécutez-vous cette commande à l'intérieur de votre projet?"
-        
-    },
-    "CouldntParseImageInfo": {
-        
-        "en-US":
-            "Getting information for {path} from ffmpeg's output failed.\n\nThe full command run was:\n{command}\n\nffmpeg's output was:\n{output}",
-        
-        "fr-FR":
-            "Obtenir des informations pour {path} à partir de la sortie de ffmpeg a échoué.\n\nLa commande complète exécutée était:\n{command}\n\nLa sortie de ffmpeg était:\n{output}"
-        
-    },
     "CouldntTranscodeImage": {
         
         "en-US":
@@ -71,20 +71,12 @@ const messages = {
         
     },
     "NoteAboutFailedOptimizations": {
-
-        "en-US":
-            "Optimized versions of the images that failed to transcode will not be available in your project.\n\nYou can rerun {packageName} to try again. Only the failed optimizations will be retried.",
-        
-        "fr-FR":
-            "Les versions optimisées des images qui n'ont pas réussi à transcoder ne seront pas disponibles dans votre projet.\n\nVous pouvez relancer {packageName} pour réessayer. Seules les optimisations échouées seront réessayées."
-    },
-    "FindingImages": {
         
         "en-US":
-            "Looking for images...\n\nFound a total of {imageCount} images in {folderCount} folders in your project so far.",
+            "Optimized versions of the images that failed to transcode will not be available in your project.\n\nYou can rerun {packageName} to try again. Only the failed optimizations will be retried. If the same error occurs again, please create a github issue.",
         
         "fr-FR":
-            "Recherche d'images...\n\nTrouvé un total de {imageCount} images dans {folderCount} dossiers dans votre projet jusqu'à présent."
+            "Les versions optimisées des images qui n'ont pas réussi à transcoder ne seront pas disponibles dans votre projet.\n\nVous pouvez relancer {packageName} pour réessayer. Seules les optimisations échouées seront réessayées. Si la même erreur se produit à nouveau, veuillez créer un github issue."
         
     },
     "ReadyToOptimize": {
@@ -97,10 +89,10 @@ const messages = {
         
     },
     "StartOptimizing": {
-
+        
         "en-US":
             "Start optimizing",
-
+        
         "fr-FR":
             "Commencer l'optimisation"
         
@@ -115,16 +107,16 @@ const messages = {
         
     },
     "Configure": {
-
+        
         "en-US":
             "Change quality and resolutions",
-
+        
         "fr-FR":
             "Changer la qualité et les résolutions"
         
     },
     "Exit": {
-
+        
         "en-US":
             "Exit",
         
@@ -141,14 +133,14 @@ const messages = {
             "Contrôles:\nTouches haut et bas pour déplacer la sélection\nEspace pour ajouter ou supprimer le dossier ou l'image sélectionné\nEntrée pour continuer"
         
     },
-    "AlreadyOptimized": {
+    "NoteAboutWidths": {
 
         "en-US":
-            "Skipping {path}.\nIt has already been optimized into {count} versions.",
-
+            "Widths larger than original image's width will be ignored.",
+        
         "fr-FR":
-            "Passer {path}.\nIl a déjà été optimisé en {count} versions."
-
+            "Les largeurs supérieures à la largeur de l'image d'origine seront ignorées."
+        
     }
 } as const
 

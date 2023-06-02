@@ -1,5 +1,6 @@
 ---
 import getPicture from './get-picture'
+import getImage from './get-image'
 import manifest from './manifest'
 import type { HTMLAttributes } from 'astro/types'
 
@@ -9,27 +10,37 @@ interface Props<
     ImageSrc extends keyof Manifest,
     Format extends Exclude<keyof Manifest[ImageSrc], 'original'>
 > extends Omit<HTMLAttributes<'img'>, 'alt' | 'src'> {
-    alt           : string
-    src           : ImageSrc
-    formats      ?: Array<Format>
-    widths       ?: Array<keyof Manifest[ImageSrc][Format]>
-    pictureClass ?: string
+    alt              : string
+    src              : ImageSrc
+    formats         ?: Array<Format>
+    widths          ?: Array<keyof Manifest[ImageSrc][Format]>
+    pictureClass    ?: string
+    withplaceholder ?: '' | true
 }
 
 const {
 	src,
-	formats = [ 'jpeg', 'webp', 'avif' ],
+	formats = [ 'webp', 'avif' ],
 	widths,
 	loading = 'lazy',
 	decoding = 'async',
     pictureClass,
+    withplaceholder,
 	...attrs
 } = Astro.props
 
 const sources = getPicture(manifest, { src, widths, formats })
+
 const fallbackImgSrc = getImage(manifest, { src, format: 'jpeg' })
+
+const placeholder =
+    withplaceholder
+        ? {
+            style: `background-image: url(${getImage(manifest, { src, type: 'preview' })}); background-size: cover; image-rendering:auto;`
+        }
+        : {}
 ---
 <picture class={ pictureClass }>
 	{ sources.map(srcAttrs => <source { ...srcAttrs }/>) }
-	<img src={ fallbackImgSrc } { loading } { decoding } { ...attrs } />
+	<img src={ fallbackImgSrc } { loading } { decoding } { ...placeholder } { ...attrs } />
 </picture>

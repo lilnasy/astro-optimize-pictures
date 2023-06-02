@@ -19,11 +19,12 @@ export default function getPicture(
 
     const pickedFormats =
         Object.keys(manifestFormats)
+        .filter(f => f !== 'original' && f !== 'preview')
         .filter(f => formats === undefined || formats.includes(f))
     
     if (pickedFormats.length === 0) {
         if (formats?.length === 0)
-            throw new TypeError('No formats were passed to Image. Please pass at least one format to Image.')
+            throw new TypeError('No valid format was passed to the Image component. Please pass at least one valid format to Image.')
         else
             throw new TypeError(src + ' has not been optimized to any format. This may be because the optimization for this image failed, and you need to rerun astro-optimize-images.')
     }

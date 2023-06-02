@@ -9,10 +9,11 @@ interface Props<
     ImageSrc extends keyof Manifest,
     Format extends Exclude<keyof Manifest[ImageSrc], 'original'>
 > extends Omit<HTMLAttributes<'img'>, 'alt' | 'src' | 'width'> {
-    alt     : string
-    src     : ImageSrc
-    format ?: Format
-    width  ?: keyof Manifest[ImageSrc][Format]
+    alt              : string
+    src              : ImageSrc
+    format          ?: Format
+    width           ?: keyof Manifest[ImageSrc][Format]
+    withplaceholder ?: '' | true
 }
 
 const {
@@ -21,9 +22,15 @@ const {
     width,
     loading = 'lazy',
 	decoding = 'async',
+    withplaceholder,
     ...rest
 } = Astro.props
 
-const resolvedSrc = getImage(manifest, { src, format, width })
+const hostedUrl = getImage(manifest, { src, format, width })
+
+const placeholder =
+    withplaceholder
+        ? { style: `background-image: url(${getImage(manifest, { src, type: 'preview' })}); background-size: cover; image-rendering:auto;` }
+        : {}
 ---
-<img src={ resolvedSrc } { loading } { decoding } { ...rest }/>
+<img src={ hostedUrl } { loading } { decoding } { ...placeholder } { ...rest }/>

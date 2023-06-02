@@ -348,7 +348,7 @@ async function selectPaths(
     }
 }
 
-async function selectTranscodeOptions(
+async function selectOptions(
     prompt  : string,
     options : TranscodeOptions
 ) : Promise<TranscodeOptions> {
@@ -541,14 +541,21 @@ function renderTable(
             .map(width => box.line.horizontal[border].repeat(width + padding * 2))
             .join(box.T.upright[border]) +
         box.corner.top.right[border]
-
-    const rowSeparator =
-        box.T.rotatedLeft[border] + 
-        usableColumnWidths
+    
+    const rowSeparator = iife(_ => {
+        if (border === 'none') return '\n'
+        
+        const leftEdge = box.T.rotatedLeft[border]
+        
+        const middle = usableColumnWidths
             .map(width => box.line.horizontal[border].repeat(width + padding * 2))
-            .join(box.intersection[border]) +
-        box.T.rotatedRight[border]
-
+            .join(box.intersection[border]) 
+        
+        const rightEdge = box.T.rotatedRight[border]
+        
+        return '\n' + leftEdge + middle + rightEdge + '\n'
+    })
+    
     const bottomBorder =
         box.corner.bottom.left[border] +
         usableColumnWidths
@@ -564,16 +571,9 @@ function renderTable(
                 )
             ).map(line => box.line.vertical[border] + line + box.line.vertical[border])
         )
-
-    const middle =
-        rows
-        .map(rowLines => rowLines.join('\n'))
-        .join(
-            border === 'none'
-                ? '\n'
-                : '\n' + rowSeparator + '\n'
-        )
-
+    
+    const middle = rows.map(rowLines => rowLines.join('\n')).join(rowSeparator)
+    
     return topBorder + '\n' + middle + '\n' + bottomBorder
 }
 
@@ -582,14 +582,11 @@ function shrinkWidths(
     availableWidth: number
 ) : Array<number> {
     const widthToBeUsed = columnWidths.reduce((sum, width) => sum + width, 0)
+    
     if (availableWidth >= (columnWidths.length * 4) && widthToBeUsed > availableWidth) {
+        
         const largestColumnWidth =
-            columnWidths.reduce((largest, width) =>
-                width > largest
-                    ? width
-                    : largest,
-                0
-            )
+            columnWidths.reduce((largest, width) => Math.max(width, largest), 0)
         
         const newColumnWidths =
             columnWidths.map(width =>
@@ -600,6 +597,7 @@ function shrinkWidths(
         
         return shrinkWidths(newColumnWidths, availableWidth)
     }
+    
     return columnWidths
 }
 
@@ -645,7 +643,11 @@ function toggle<Key extends string | number | symbol>(
     obj[key] = !obj[key]
 }
 
+function iife<A>(fun: (...args: unknown[]) => A): A {
+    return fun()
+}
+
 
 /***** EXPORTS *****/
 
-export { style, lineBreak, print, preview, clear, onKeyPress, selectOneOf, selectMultipleOf, selectPaths, selectTranscodeOptions, renderTable, renderFsTreeFromPaths }
+export { style, lineBreak, print, preview, clear, onKeyPress, selectOneOf, selectMultipleOf, selectPaths, selectOptions, renderTable, renderFsTreeFromPaths }

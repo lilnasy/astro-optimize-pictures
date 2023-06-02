@@ -12,7 +12,7 @@ import {
     print,
     selectOneOf,
     selectPaths,
-    selectTranscodeOptions,
+    selectOptions,
     renderTable,
     renderFsTreeFromPaths
 }                          from './terminal.ts'
@@ -114,7 +114,9 @@ async function ready(
     }
 
     async function configure() {
-        options = await selectTranscodeOptions('Configure', options)
+        const instructions = message('InteractionInstructions')
+        const widthsNote = message('NoteAboutWidths')
+        options = await selectOptions(instructions + '\n\n' + widthsNote, options)
         return menu()
     }
 }
@@ -279,16 +281,29 @@ function showSummary(
     image : Parameters<ShowSummaryFun>[0],
     tasks : Parameters<ShowSummaryFun>[1]
 ) {
-    const title   = path.relative(cwd, image.sourcePath) + ' (' + readableFileSize(image.stat.size) + ')'
+    const title   = path.relative(cwd, image.path) + ' (' + readableFileSize(image.stat.size) + ')'
     const formats = Array.from(new Set(tasks.map(task => task.format)))
-    const widths  = Array.from(new Set(tasks.map(task => task.width))).sort((a, b) => a - b)
-    const header  = [ 'Widths\\Formats', ...formats.map(String) ]
+    const header  = [ 'Widths╲Formats', ...formats.map(String) ]
+    
+    const widths = iife(_ => {
+        
+        const allWidths =
+            tasks
+            .filter(task => task.type !== 'preview')
+            .map(task => task.width)
+        
+        const uniqueWidths = Array.from(new Set(allWidths))
+        
+        return uniqueWidths.sort((a, b) => a - b)
+    })
+    
     const rows    = widths.map(width => [
         String(width),
         ...formats.map(format => {
-            const task = tasks.find(task => task.format === format && task.width === width)!
+            const task = tasks.find(task => task.format === format && task.width === width)
                     
             if (
+                task === undefined ||
                 !('stat' in task) ||
                 typeof task.stat !== 'object' ||
                 !('size' in task.stat) ||
@@ -341,4 +356,8 @@ async function serializeResponse(response : Response) {
     const headers = Array.from(response.headers).map(([key, value]) => `${key}: ${value}`)
     const body = await response.text()
     return `${response.url}\n${response.status} ${response.statusText}\n${headers.join('\n')}\n\n${body}`
+}
+
+function iife<A>(fun: (...args: unknown[]) => A): A {
+    return fun()
 }

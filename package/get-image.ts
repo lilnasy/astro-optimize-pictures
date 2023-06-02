@@ -1,6 +1,6 @@
 export default function getImage(
     manifest : Record<string, unknown>,
-    { src, format, width } : Record<string, unknown>
+    { src, format, width, type } : Record<string, unknown>
 ) : string {
     
     if (typeof src !== 'string')
@@ -11,6 +11,9 @@ export default function getImage(
     
     const formats = manifest[src] as Record<string, unknown>
 
+    if (type === 'original') return formats.original as string
+    if (type === 'preview')  return formats.preview  as string
+
     // Automatically pick a format if one is not explicitly requested, preferring jpeg.
     const widths =
         (typeof format === 'string'
@@ -19,12 +22,12 @@ export default function getImage(
 
     if (widths === undefined)
         throw new TypeError(src + ' has not been optimized to ' + format ?? 'any format' + '. This may be because the optimization for this image failed, or the format wasn\'t enabled. You may need to rerun astro-optimize-images.')
-
+    
     const largestWidth = Object.keys(widths).map(Number).sort((a, b) => b - a).at(0)!
-
+    
     if (Number.isFinite(largestWidth) === false)
         throw new Error('Unexpected Error: ' + largestWidth + 'is not a valid width for ' + src + '. This is a bug in astro-optimize-images. Please report this message, and consider using something else in the meanwhile.')
-
+    
     // Automatically pick the largest width if one is not explicitly requested.
     const image =
         typeof width === 'number'
