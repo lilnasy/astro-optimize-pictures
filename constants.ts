@@ -16,7 +16,8 @@ export default {
         }
     },
     considerForOptimization : [ 'png', 'jpeg', 'jpg', 'avif', 'webp' ],
-    transcodeOptions: {
+    options: {
+        placement: 'in node_modules' as 'in node_modules' | 'in project root',
         widths: [
             { width: 100 , enabled: true  },
             { width: 256 , enabled: false },

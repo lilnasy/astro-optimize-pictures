@@ -9,11 +9,12 @@ export default function getImage(
     if (src in manifest === false)
         throw new TypeError(src + ' does not refer to an optimized image. If you recently added this image, rerun astro-optimize-images.')
     
-    const formats = manifest[src] as Record<string, unknown>
+    const formats  = manifest[src] as Record<string, unknown>
+    const metadata = (manifest[src] as { meta : Record<string, unknown> }).meta
 
-    if (type === 'original') return formats.original as string
-    if (type === 'preview')  return formats.preview  as string
-
+    if (type === 'original') return getLink(metadata.original)
+    if (type === 'preview')  return metadata.preview  as string
+    
     // Automatically pick a format if one is not explicitly requested, preferring jpeg.
     const widths =
         (typeof format === 'string'
@@ -36,16 +37,21 @@ export default function getImage(
 
     if (image === undefined)
         throw new TypeError(src + ' has not been optimized for the width of ' + width + '. Consider using one of the available widths: ' + Object.keys(widths).join(', ') + '.')
+    
+    return getLink(image)
+}
 
+function getLink(image : unknown) : string {
+    
     if (typeof image === 'string')
         return image
-
+    
     if (
         typeof image === 'object' &&
         image !== null &&
         'src' in image &&
         typeof image.src === 'string'
     ) return image.src
-
-    throw new Error('Unexpected Error: image information is not usable. Expected imported image to either be a string or an object with a "src" property. Received:\n' + JSON.stringify(src, null, 4))
+    
+    throw new Error('Unexpected Error: image information is not usable. Expected imported image to either be a string or an object with a "src" property. Received:\n' + JSON.stringify(image, null, 4))
 }

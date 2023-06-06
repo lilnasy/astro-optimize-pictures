@@ -46,8 +46,7 @@ await app({ cwd, ready, reportError, showProgress, showSummary })
 
 ready satisfies ReadyFun
 async function ready(
-    sourcePaths : Parameters<ReadyFun>[0],
-    options     : Parameters<ReadyFun>[1]
+    ...[ sourcePaths, options ] : Parameters<ReadyFun>
 ) : ReturnType<ReadyFun> {
     
     let pathMask = new Array<boolean>(sourcePaths.length).fill(true)
@@ -229,8 +228,7 @@ async function reportError(
 
 showProgress satisfies ShowProgressFun
 async function showProgress(
-    sourcePath : Parameters<ShowProgressFun>[0],
-    progress   : Parameters<ShowProgressFun>[1],
+    ...[ sourcePath, progress, remainingCount ] : Parameters<ShowProgressFun>
 ) : Promise<void> {
 
     await progress.pipeTo(new WritableStream({
@@ -244,42 +242,43 @@ async function showProgress(
 
     function render(_ ?: unknown) {
         
+        const remaining = message('RemainingCount', { remainingCount: String(remainingCount) })
+        
         maxUnderwayOptimizations =
             Math.max(maxUnderwayOptimizations, Object.keys(underwayOptimizations).length)
+        
+        const halfWidth = Math.floor(Deno.consoleSize().columns / 2)
 
         const extraRows =
-            Array.from({ length: maxUnderwayOptimizations - Object.keys(underwayOptimizations).length }, () => ['', '', ''])
-
-        const table =
+            Array<''>(maxUnderwayOptimizations - Object.keys(underwayOptimizations).length).fill('')
+        
+        const progress =
             Object.entries(underwayOptimizations)
             .map(([ source, destination ]) => {
                 
                 const sourcePath = path.relative(cwd, source)
                 const destinationPath = path.relative(cwd, destination)
                 
-                const maxColumnWidth = Math.floor((Deno.consoleSize().columns - 8) / 2)
-
                 const truncatedSourcePath =
-                    (sourcePath.length + 3) > maxColumnWidth
-                        ? '...' + sourcePath.slice(sourcePath.length + 3 - maxColumnWidth)
-                        : sourcePath
+                    (sourcePath.length + 3) > halfWidth
+                        ? '...' + sourcePath.slice(sourcePath.length + 3 - halfWidth)
+                        : sourcePath.padEnd(halfWidth, ' ')
                 
                 const truncatedDestinationPath =
-                    (destinationPath.length + 3) > maxColumnWidth
-                        ? '...' + destinationPath.slice(destinationPath.length + 3 - maxColumnWidth)
-                        : destinationPath
+                    (destinationPath.length + 3) > halfWidth
+                        ? '...' + destinationPath.slice(destinationPath.length + 3 - halfWidth)
+                        : destinationPath.padEnd(halfWidth, ' ')
 
-                return [ truncatedSourcePath, ' => ', truncatedDestinationPath ]
-            }).concat(extraRows)
-        
-        preview([ renderTable(table, { border: 'none', padding: 0 }) ])
+                return truncatedSourcePath + ' => ' + truncatedDestinationPath
+            })
+                
+        preview(progress.concat(extraRows).concat([remaining]))
     }
 }
 
 showSummary satisfies ShowSummaryFun
 function showSummary(
-    image : Parameters<ShowSummaryFun>[0],
-    tasks : Parameters<ShowSummaryFun>[1]
+    ...[ image, tasks ] : Parameters<ShowSummaryFun>
 ) {
     const title   = path.relative(cwd, image.path) + ' (' + readableFileSize(image.stat.size) + ')'
     const formats = Array.from(new Set(tasks.map(task => task.format)))
@@ -297,7 +296,7 @@ function showSummary(
         return uniqueWidths.sort((a, b) => a - b)
     })
     
-    const rows    = widths.map(width => [
+    const rows = widths.map(width => [
         String(width),
         ...formats.map(format => {
             const task = tasks.find(task => task.format === format && task.width === width)
@@ -314,21 +313,21 @@ function showSummary(
             if (task.stat.size === 0) 
                 throw new Error('Unexpected: task.stat.size === 0')
 
-            const delta = task.stat.size / image.stat.size
-            const smaller = delta < 1
+            const relativeSize = task.stat.size / image.stat.size
+            const smaller = relativeSize < 1
 
             const classes = {
                 green: task.new && smaller,
                 red  : task.new && !smaller,
-                dim  : !task.new
+                dim  : task.new !== true
             }
 
             const fileSizeText = readableFileSize(task.stat.size)
 
             const savingsText =
                 smaller
-                    ? '⇩ ' + ((1 - delta) * 100).toFixed(0) + '%'
-                    : '⇧ ' + ((delta - 1) * 100).toFixed(0) + '%'
+                    ? '⇩ ' + ((1 - relativeSize) * 100).toFixed(0) + '%'
+                    : '⇧ ' + ((relativeSize - 1) * 100).toFixed(0) + '%'
             
             return style(fileSizeText, classes) + '\n' + style(savingsText, classes)
         })

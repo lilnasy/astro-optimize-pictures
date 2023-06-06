@@ -1,6 +1,7 @@
 ---
 import getPicture from './get-picture'
 import getImage from './get-image'
+import getResolution from './get-resolution'
 import manifest from './manifest'
 import type { HTMLAttributes } from 'astro/types'
 
@@ -30,8 +31,8 @@ const {
 } = Astro.props
 
 const sources = getPicture(manifest, { src, widths, formats })
-
 const fallbackImgSrc = getImage(manifest, { src, format: 'jpeg' })
+const resolution = getResolution(manifest, src)
 
 const placeholder =
     withplaceholder
@@ -42,5 +43,5 @@ const placeholder =
 ---
 <picture class={ pictureClass }>
 	{ sources.map(srcAttrs => <source { ...srcAttrs }/>) }
-	<img src={ fallbackImgSrc } { loading } { decoding } { ...placeholder } { ...attrs } />
+	<img src={ fallbackImgSrc }  { ...resolution } { loading } { decoding } { ...placeholder } { ...attrs } />
 </picture>

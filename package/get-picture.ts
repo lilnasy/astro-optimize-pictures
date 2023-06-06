@@ -19,7 +19,7 @@ export default function getPicture(
 
     const pickedFormats =
         Object.keys(manifestFormats)
-        .filter(f => f !== 'original' && f !== 'preview')
+        .filter(f => f !== 'meta')
         .filter(f => formats === undefined || formats.includes(f))
     
     if (pickedFormats.length === 0) {
@@ -41,7 +41,7 @@ export default function getPicture(
                 .join(', ')
             
             return {
-                type: getType(format),
+                type: mimeType(format),
                 srcset
             }
         })
@@ -50,25 +50,25 @@ export default function getPicture(
 }
 
 function getLink(image : unknown) : string {
-
+    
     if (typeof image === 'string')
         return image
-
+    
     if (
         typeof image === 'object' &&
         image !== null &&
         'src' in image &&
         typeof image.src === 'string'
     ) return image.src
-
+    
     throw new Error('Unexpected Error: image information is not usable. Expected imported image to either be a string or an object with a "src" property. Received:\n' + JSON.stringify(image, null, 4))
 }
 
-function getType(format : string) : string {
+function mimeType(format : string) : string {
     
     if (format === 'jpeg') return 'image/jpeg'
     if (format === 'webp') return 'image/webp'
     if (format === 'avif') return 'image/avif'
-
+    
     throw new Error('Unexpected Error: ' + format + ' is not a valid format. This is a bug in astro-optimize-images. Please report this message, and consider using something else in the meanwhile.')
 }

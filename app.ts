@@ -11,21 +11,23 @@ import { $, fs, path, partition } from './deps.ts'
 
 export default async function app({ cwd, ready, reportError, showProgress, showSummary }: AppOptions) {
     
-    const configFile = await searchForAstroConfig(cwd)
+    const configFile = await searchForProjectDetails(cwd)
     
     if (unhappy(configFile)) return reportError(configFile)
     
-    const projectDetails = parseAstroConfig(configFile)
-    const manifestPath   = path.join(projectDetails.pkgPath, 'manifest.ts')
+    const projectDetails = parseProjectDetails(configFile)
     const ffmpegPromise  = findOrCreateTemporaryFolder().then(searchForFfmpeg)
     const allImages      = await searchForImages(projectDetails.srcDir).toArray()
     
     const { selectedImages, widths, formats } =
-        await ready(allImages, structuredClone(constants.transcodeOptions))
+        await ready(allImages, structuredClone(constants.options))
     
     const ffmpeg = await ffmpegPromise
     
     if (unhappy(ffmpeg)) return reportError(ffmpeg)
+
+    const packagePath  = determinePackageDestination(projectDetails.rootDir, constants.options.placement)
+    const manifestPath = path.join(packagePath, 'manifest.ts')
     
     // TODO: investigate whether the codecs used are multi-threaded
     // they may need to be made single-threaded for this to be optimal
@@ -34,19 +36,19 @@ export default async function app({ cwd, ready, reportError, showProgress, showS
         await concurrentMap(
             Math.max(1, Math.ceil(navigator.hardwareConcurrency / 2)),
             selectedImages,
-            sourcePath => processImage(ffmpeg, projectDetails, sourcePath, widths, formats, reportError, showProgress, showSummary)
+            sourcePath => processImage(ffmpeg, projectDetails, packagePath, sourcePath, widths, formats, 1, reportError, showProgress, showSummary)
         )
     
     const optimizations = opts.filter(happy)
     
-    await writeManifestFile(projectDetails, optimizations, manifestPath)
+    await writeManifestFile(projectDetails, packagePath, optimizations, manifestPath)
     await Promise.all([
-        download(import.meta.resolve('./package/index.ts'      ), path.join(projectDetails.pkgPath, 'index.ts')),
-        download(import.meta.resolve('./package/Image.astro'   ), path.join(projectDetails.pkgPath, 'Image.astro')),
-        download(import.meta.resolve('./package/Picture.astro' ), path.join(projectDetails.pkgPath, 'Picture.astro')),
-        download(import.meta.resolve('./package/get-image.ts'  ), path.join(projectDetails.pkgPath, 'get-image.ts')),
-        download(import.meta.resolve('./package/get-picture.ts'), path.join(projectDetails.pkgPath, 'get-picture.ts')),
-        download(import.meta.resolve('./package/package.json'  ), path.join(projectDetails.pkgPath, 'package.json'))
+        download(import.meta.resolve('./package/index.ts'      ), path.join(packagePath, 'index.ts')),
+        download(import.meta.resolve('./package/Image.astro'   ), path.join(packagePath, 'Image.astro')),
+        download(import.meta.resolve('./package/Picture.astro' ), path.join(packagePath, 'Picture.astro')),
+        download(import.meta.resolve('./package/get-image.ts'  ), path.join(packagePath, 'get-image.ts')),
+        download(import.meta.resolve('./package/get-picture.ts'), path.join(packagePath, 'get-picture.ts')),
+        download(import.meta.resolve('./package/package.json'  ), path.join(packagePath, 'package.json'))
     ])
     
     // TODO happy exit message
@@ -57,11 +59,27 @@ export default async function app({ cwd, ready, reportError, showProgress, showS
 
 export interface AppOptions {
     cwd          : string
-    ready        : (images : string[], transcodeOptions : TranscodeOptions)            => Promise<OptimizationManifest>
-    reportError  : (cantContinue : CantContinue.Any)                                   => unknown
-    showProgress : (sourcePath : string, progress : ReadableStream<TranscodeProgress>) => Promise<unknown>
-    showSummary  : (imageInfo : ImageInfo, transcodeTasks : TranscodeTask[])           => unknown
+    ready        : (...args : ReadyArgs)             => Promise<OptimizationManifest>
+    showProgress : (...args : ShowProgressArgs)      => Promise<unknown>
+    showSummary  : (...args : ShowSummaryArgs)       => unknown
+    reportError  : (cantContinue : CantContinue.Any) => unknown
 }
+
+type ReadyArgs = [
+    images           : string[],
+    transcodeOptions : TranscodeOptions
+]
+
+type ShowProgressArgs = [
+    sourcePath     : string,
+    progress       : ReadableStream<TranscodeProgress>,
+    remainingCount : number
+]
+
+type ShowSummaryArgs = [
+    imageInfo      : ImageInfo,
+    transcodeTasks : TranscodeTask[]
+]
 
 export interface OptimizationManifest {
     selectedImages : string[]
@@ -93,7 +111,6 @@ interface ProjectDetails {
     srcDir    : string
     outDir    : string
     publicDir : string
-    pkgPath   : string
 }
 
 interface ImageInfo {
@@ -140,9 +157,11 @@ type TranscodeProgress = { destinationPath : string }
 async function processImage(
     ffmpeg         : string,
     projectDetails : ProjectDetails,
+    packagePath    : string,
     sourcePath     : string,
     widths         : number[],
     formats        : Array<FormatDetails>,
+    remainingCount : number,
     reportError    : AppOptions['reportError'],
     showProgress   : AppOptions['showProgress'],
     showSummary    : AppOptions['showSummary']
@@ -158,7 +177,7 @@ async function processImage(
     }
 
     const transcodeMatrix =
-        createTranscodeMatrix(projectDetails, sourceImage, widths, formats)
+        createTranscodeMatrix(projectDetails, packagePath, sourceImage, widths, formats)
     
     const { previouslyTranscoded, requiredTranscodes } =
         await determineRequiredTranscodes(transcodeMatrix)
@@ -173,7 +192,7 @@ async function processImage(
     const { progress, couldntTranscodeImage } =
         optimizeImage(ffmpeg, sourceImage.path, requiredTranscodes)
     
-    await showProgress(sourcePath, progress)
+    await showProgress(sourcePath, progress, remainingCount)
     
     // for type safety of the unhappy path,
     // this promise is fulfilled with an error,
@@ -207,44 +226,57 @@ async function processImage(
 
 async function writeManifestFile(
     projectDetails   : ProjectDetails,
+    packagePath      : string,
     optimizations    : Array<Optimization>,
     manifestFilePath : string
 ) {
     type Width       = number
     type Identifier  = `$${number}`
     type InlineImage = `data:image/webp;base64,${string}`
+    type Metadata    = {
+        original : Identifier
+        preview  : InlineImage
+        height   : number
+        width    : number
+    }
     type Manifest    =
-        Record<string, Record<Format, Record<Width, Identifier>> & {
-            original : Identifier
-            preview  : InlineImage
-        }>
+        Record<string, Record<Format, Record<Width, Identifier>> & { meta: Metadata }>
     
     const tick = createTicker()    
     const manifest : Manifest = {}
+    let importStatements = ''
     
-    const importStatements = optimizations.flatMap(optimization => {
+    optimizations.forEach(optimization => {
         
         const sourceIndentifier: Identifier = `$${ tick() }`
         
         const sourceSpecifier =
             Deno.build.os === 'windows'
-                ? path.relative(projectDetails.pkgPath, optimization.sourceImage.path).replaceAll('\\', '/')
-                : path.relative(projectDetails.pkgPath, optimization.sourceImage.path)
+                ? path.relative(packagePath, optimization.sourceImage.path).replaceAll('\\', '/')
+                : path.relative(packagePath, optimization.sourceImage.path)
+        
+        importStatements += `\nimport ${ sourceIndentifier } from '${ sourceSpecifier }'\n`
         
         const imageSrc =
             Deno.build.os === 'windows'
                 ? path.relative(projectDetails.srcDir, optimization.sourceImage.path).replaceAll('\\', '/')
                 : path.relative(projectDetails.srcDir, optimization.sourceImage.path)
         
-        manifest[imageSrc] ??= { original : sourceIndentifier } as Manifest[keyof Manifest]
+        manifest[imageSrc] ??= {
+            meta: {
+                original : sourceIndentifier,
+                width    : optimization.sourceImage.width,
+                height   : optimization.sourceImage.height,
+            }
+        } as Manifest[keyof Manifest]
         
-        const importStatementsForOptimizedImages = optimization.tasks.map(task => {
+        optimization.tasks.forEach(task => {
             
             if (task.type === 'preview') {
                 const imageByteArray = Deno.readFileSync(task.destinationPath)
                 const base64encoded  = btoa(String.fromCharCode(...imageByteArray))
-                manifest[imageSrc].preview = `data:image/webp;base64,${base64encoded}`
-                return ''
+                manifest[imageSrc].meta.preview = `data:image/webp;base64,${base64encoded}`
+                return
             }
             
             const format     : Format     = task.format
@@ -259,17 +291,12 @@ async function writeManifestFile(
             manifest[imageSrc][format]      ??= {}
             manifest[imageSrc][format][width] = identifier
             
-            return `import ${identifier} from '${destinationSpecifier}'`
+            importStatements += `import ${identifier} from '${destinationSpecifier}'\n`
         })
-        
-        return [
-            `import ${sourceIndentifier} from '${sourceSpecifier}'`,
-            ...importStatementsForOptimizedImages
-        ]
     })
     
     const manifestFileContents =
-        importStatements.join('\n') +
+        importStatements +
         '\n' +
         'export default ' +
         JSON.stringify(manifest, null, 4)
@@ -285,7 +312,7 @@ async function writeManifestFile(
 
 /***** IMPLEMENTATION *****/
 
-async function searchForAstroConfig(
+async function searchForProjectDetails(
     dir : string
 ) {
     const fileNames = [
@@ -322,7 +349,7 @@ async function searchForAstroConfig(
     } satisfies ConfigFile
 }
 
-function parseAstroConfig(
+function parseProjectDetails(
     config : ConfigFile
 ) : ProjectDetails {
 
@@ -338,9 +365,18 @@ function parseAstroConfig(
     const srcDir    = path.join(path.dirname(config.path), relativeSrcDir)
     const outDir    = path.join(path.dirname(config.path), relativeOutDir)
     const publicDir = path.join(path.dirname(config.path), relativePublicDir)
-    const pkgPath   = path.join(rootDir, 'node_modules', constants.packageName)
     
-    return { rootDir, srcDir, outDir, publicDir, pkgPath } satisfies ProjectDetails
+    return { rootDir, srcDir, outDir, publicDir } satisfies ProjectDetails
+}
+
+function determinePackageDestination(rootDir : string, placement : "in node_modules" | "in project root") {
+    if (placement === 'in node_modules')
+        return path.join(rootDir, 'node_modules', constants.packageName)
+    
+    if (placement === 'in project root')
+        return path.join(rootDir, 'node_modules', constants.packageName)
+    
+    throw new Error(`Unknown placement option: ${placement}`)
 }
 
 async function parseImageInfo(
@@ -379,6 +415,7 @@ async function parseImageInfo(
 
 function createTranscodeMatrix(
     projectDetails : ProjectDetails,
+    packagePath    : string,
     sourceImage    : ImageInfo,
     widths         : number[],
     formats        : Array<FormatDetails>
@@ -395,21 +432,22 @@ function createTranscodeMatrix(
         .concat([ sourceImage.width ])
         
         .map(width => {
-            const destinationPath = determineDestinationPath(projectDetails, sourceImage.path, quality, width, format)
+            const destinationPath = determineDestinationPath(projectDetails, packagePath, sourceImage.path, quality, width, format)
             return { codec, format, destinationPath, quality, width, height: -2 } satisfies TranscodeTask
         })
-    ).concat([ createPreviewTask(projectDetails, sourceImage) ])
+    ).concat([ createPreviewTask(projectDetails, packagePath, sourceImage) ])
 }
 
 function createPreviewTask(
     projectDetails : ProjectDetails,
+    packagePath    : string,
     sourceImage    : ImageInfo
 ) : TranscodeTask {
-    const { codec, format, quality } = constants.transcodeOptions.preview
+    const { codec, format, quality } = constants.options.preview
     const aspectRatio                = sourceImage.width / sourceImage.height
     const width                      = Math.round(Math.sqrt(100 * aspectRatio))
     const height                     = Math.round(Math.sqrt(100 / aspectRatio))
-    const destinationPath            = determineDestinationPath(projectDetails, sourceImage.path, quality, width, format)
+    const destinationPath            = determineDestinationPath(projectDetails, packagePath, sourceImage.path, quality, width, format)
     return { codec, format, quality, width, height, destinationPath, type: 'preview' } satisfies TranscodeTask
 }
 
@@ -503,6 +541,7 @@ function optimizeImage(
 
 function determineDestinationPath(
     projectDetails : ProjectDetails,
+    packagePath    : string,
     sourcePath     : string,
     quality        : number,
     width          : number,
@@ -512,7 +551,7 @@ function determineDestinationPath(
     const fileName = `${path.basename(sourcePath, path.extname(sourcePath))}-${quality}q-${width}w.${format}`
 
     return path.join(
-        projectDetails.pkgPath,
+        packagePath,
         constants.optimizedFolderName,
         relative,
         fileName
@@ -636,16 +675,30 @@ async function downloadFfmpeg(
 async function concurrentMap<A, B>(
     concurrency : number,
     iterable    : Iterable<A> | AsyncIterable<A>,
+    callback    : (a : A, index : number) => Promise<B> | B
+) : Promise<Array<B>>
+
+async function concurrentMap<A, B>(
+    concurrency : number,
+    iterable    : Iterable<A> | AsyncIterable<A>,
     callback    : (a : A) => Promise<B> | B
+) : Promise<Array<B>>
+
+async function concurrentMap<A, B>(
+    concurrency : number,
+    iterable    : Iterable<A> | AsyncIterable<A>,
+    callback    : (a : A, index : number) => Promise<B> | B
 ) : Promise<Array<B>> {
     
     const result = new Array<B>
-
+    
     const iterator =
         Symbol.iterator in iterable
             ? iterable[Symbol.iterator]()
             : iterable[Symbol.asyncIterator]()
-
+    
+    let index = 0
+    
     async function spawnThread() : Promise<void> {
         const { value, done } = await iterator.next()
         
@@ -653,7 +706,7 @@ async function concurrentMap<A, B>(
         if (done) return
         
         // does not preserve order
-        result.push(await callback(value))
+        result.push(await callback(value, index++))
         
         // process another element on this thread
         return spawnThread()

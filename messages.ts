@@ -141,6 +141,15 @@ const messages = {
         "fr-FR":
             "Les largeurs supérieures à la largeur de l'image d'origine seront ignorées."
         
+    },
+    "RemainingCount": {
+
+        "en-US":
+            "+{remainingCount} images queued for optimization.",
+
+        "fr-FR":
+            "+{remainingCount} images en file d'attente pour l'optimisation."
+        
     }
 } as const
 
