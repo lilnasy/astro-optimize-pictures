@@ -4,7 +4,7 @@
 import { staticText, hideCursor, showCursor, colors, readKeypress } from './deps.ts'
 import * as Tree from './tree.ts'
 
-import type { TranscodeOptions } from './app.ts'
+import type { Configuration } from './app.ts'
 
 
 /***** CONSTANTS *****/
@@ -350,10 +350,10 @@ async function selectPaths(
 
 async function selectOptions(
     prompt  : string,
-    options : TranscodeOptions
-) : Promise<TranscodeOptions> {
+    options : Configuration
+) : Promise<Configuration> {
 
-    let focusedSection : 'widths' | 'formats' | 'qualities'
+    let focusedSection : 'placement' | 'widths' | 'formats' | 'qualities'
     let focusedWidth   = 0
     let focusedFormat  : keyof typeof options.formats = 'jpeg'
     let focusedQuality : keyof typeof options.formats = 'jpeg'
@@ -365,9 +365,19 @@ async function selectOptions(
     showCursor()
     return options
 
+    function selectPlacement(): Promise<unknown> {
+        render(focusedSection = 'placement')
+        return onKeyPress({
+            left : () => render(options.placement.selected = options.placement.options[0]),
+            right: () => render(options.placement.selected = options.placement.options[1]),
+            down : selectWidths
+        })
+    }
+
     function selectWidths(): Promise<unknown> {
         render(focusedSection = 'widths')
         return onKeyPress({
+            up    : selectPlacement,
             left  : () => render(focusedWidth = Math.max(0, focusedWidth - 1)),
             right : () => render(focusedWidth = Math.min(options.widths.length - 1, focusedWidth + 1)),
             down  : selectFormats,
@@ -415,6 +425,18 @@ async function selectOptions(
     function render(_?: unknown) {
         clear()
         let output = '\n'
+
+        const placementTitle = (focusedSection === 'placement' ? style.bold.underline : style.bold)('placement')
+        const placementBody = options.placement.options.map(placementOption => {
+            const selected = placementOption === options.placement.selected
+            const classes = {
+                dim          : !selected && focusedSection !== 'placement',
+                strikethrough: !selected,
+                inverse      : selected
+            }
+            return (selected ? '✓ ' : '✗ ') + style(placementOption, classes)
+        })
+        output += placementTitle + '\n    ' + placementBody.join('    ') + '\n\n'
 
         const widthsTitle = (focusedSection === 'widths'  ? style.bold.underline : style.bold)('widths')
         const widthsBody = options.widths.map(({ width , enabled }, i) => {

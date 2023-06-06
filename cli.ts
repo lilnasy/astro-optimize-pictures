@@ -32,8 +32,9 @@ type ShowSummaryFun  = AppOptions['showSummary']
 /***** STATE *****/
 
 const underwayOptimizations : Record<string, string> = {}
-let maxUnderwayOptimizations = 0
 const failedOptimizationMessages = new Array<string>
+let maxUnderwayOptimizations = 0
+let optimizationsSoFar = 0
 
 
 /***** ENTRYPOINT *****/
@@ -46,7 +47,7 @@ await app({ cwd, ready, reportError, showProgress, showSummary })
 
 ready satisfies ReadyFun
 async function ready(
-    ...[ sourcePaths, options ] : Parameters<ReadyFun>
+    ...[ sourcePaths, config ] : Parameters<ReadyFun>
 ) : ReturnType<ReadyFun> {
     
     let pathMask = new Array<boolean>(sourcePaths.length).fill(true)
@@ -60,16 +61,18 @@ async function ready(
             .filter((_, i) => pathMask[i]),
         
         widths:
-            options.widths
+            config.widths
             .filter(({ enabled }) => enabled)
             .map(({ width }) => width),
         
         formats:
-            Object.entries(options.formats)
+            Object.entries(config.formats)
             .filter(([ _, { enabled } ]) => enabled)
-            .map(([ format, { codec, quality } ]) => ({ codec, format: format as keyof typeof options.formats, quality }))
+            .map(([ format, { codec, quality } ]) => ({ codec, format: format as keyof typeof config.formats, quality })),
+        
+        placement: config.placement.selected
     }
-
+    
     function summary() {
         const selectedImages = sourcePaths.filter((_, i) => pathMask[i])
         const uniqueFolders = new Set(selectedImages.map(path.dirname))
@@ -78,7 +81,7 @@ async function ready(
             folderCount: String(uniqueFolders.size)
         })
     }
-
+    
     function fsTree() {
         const imagePaths =
             sourcePaths
@@ -87,7 +90,7 @@ async function ready(
         
         return renderFsTreeFromPaths(imagePaths, path.sep)
     }
-
+    
     async function menu() : Promise<void> {
         const action = await selectOneOf(summary() + '\n\n' + fsTree(), [
             message('StartOptimizing'),
@@ -100,7 +103,7 @@ async function ready(
         if (action === 2) return configure()
         if (action === 3) Deno.exit()
     }
-
+    
     async function pickImages() {
         const instructions = message('InteractionInstructions')
         pathMask = await selectPaths(
@@ -111,11 +114,11 @@ async function ready(
         )
         return menu()
     }
-
+    
     async function configure() {
         const instructions = message('InteractionInstructions')
         const widthsNote = message('NoteAboutWidths')
-        options = await selectOptions(instructions + '\n\n' + widthsNote, options)
+        config = await selectOptions(instructions + '\n\n' + widthsNote, config)
         return menu()
     }
 }
@@ -138,7 +141,7 @@ async function reportError(
             lineBreak()
         ])
     }
-
+    
     if (cantContinue instanceof CantContinue.CouldntConnectToInternet) {
         const { error, url } = cantContinue
         return print([
@@ -150,7 +153,7 @@ async function reportError(
             lineBreak()
         ])
     }
-
+    
     if (cantContinue instanceof CantContinue.FfmpegNotAvailableForPlatform) {
         return print([
             lineBreak(),
@@ -162,7 +165,7 @@ async function reportError(
             lineBreak()
         ])
     }
-
+    
     if (cantContinue instanceof CantContinue.CouldntDownloadFfmpeg) {
         return print([
             lineBreak(),
@@ -174,7 +177,7 @@ async function reportError(
             lineBreak()
         ])
     }
-
+    
     if (cantContinue instanceof CantContinue.CouldntWriteFfmpegToDisk) {
         return print([
             lineBreak(),
@@ -186,7 +189,7 @@ async function reportError(
             lineBreak()
         ])
     }
-
+    
     if (cantContinue instanceof CantContinue.CouldntParseImageInfo) {
         const { path, command, output } = cantContinue
         return print([
@@ -195,7 +198,7 @@ async function reportError(
             lineBreak()
         ])
     }
-
+    
     if (cantContinue instanceof CantContinue.CouldntTranscodeImage) {
         const { errorLine, sourcePath, log } = cantContinue
                     
@@ -203,7 +206,7 @@ async function reportError(
         const tempFileHandler = await Deno.open(tempFilePath, { write: true })
         
         await log.pipeThrough(new TextEncoderStream).pipeTo(tempFileHandler.writable)
-
+        
         failedOptimizationMessages.push(
             message('CouldntTranscodeImage', {
                 path         : style.blue(path.relative(cwd, sourcePath)),
@@ -211,9 +214,9 @@ async function reportError(
                 logWrittenTo : style.blue(tempFilePath)
             })
         )
-
+        
         const line = lineBreak()
-
+        
         return globalThis.onunload ??= () =>
             print([
                 line,
@@ -228,9 +231,11 @@ async function reportError(
 
 showProgress satisfies ShowProgressFun
 async function showProgress(
-    ...[ sourcePath, progress, remainingCount ] : Parameters<ShowProgressFun>
+    ...[ sourcePath, progress, totalCount ] : Parameters<ShowProgressFun>
 ) : Promise<void> {
-
+    
+    optimizationsSoFar++
+    
     await progress.pipeTo(new WritableStream({
         write({ destinationPath }) {
             render(underwayOptimizations[sourcePath] = destinationPath)
@@ -239,16 +244,16 @@ async function showProgress(
             render(delete underwayOptimizations[sourcePath])
         }
     }))
-
+    
     function render(_ ?: unknown) {
         
-        const remaining = message('RemainingCount', { remainingCount: String(remainingCount) })
+        const remaining = message('RemainingCount', { remainingCount: String(totalCount - optimizationsSoFar) })
         
         maxUnderwayOptimizations =
             Math.max(maxUnderwayOptimizations, Object.keys(underwayOptimizations).length)
         
         const halfWidth = Math.floor(Deno.consoleSize().columns / 2)
-
+        
         const extraRows =
             Array<''>(maxUnderwayOptimizations - Object.keys(underwayOptimizations).length).fill('')
         
@@ -268,10 +273,10 @@ async function showProgress(
                     (destinationPath.length + 3) > halfWidth
                         ? '...' + destinationPath.slice(destinationPath.length + 3 - halfWidth)
                         : destinationPath.padEnd(halfWidth, ' ')
-
+                
                 return truncatedSourcePath + ' => ' + truncatedDestinationPath
             })
-                
+        
         preview(progress.concat(extraRows).concat([remaining]))
     }
 }
@@ -309,21 +314,21 @@ function showSummary(
                 typeof task.stat.size !== 'number'
             )
                 return style.red('failed')
-
+            
             if (task.stat.size === 0) 
                 throw new Error('Unexpected: task.stat.size === 0')
-
+            
             const relativeSize = task.stat.size / image.stat.size
             const smaller = relativeSize < 1
-
+            
             const classes = {
                 green: task.new && smaller,
                 red  : task.new && !smaller,
                 dim  : task.new !== true
             }
-
+            
             const fileSizeText = readableFileSize(task.stat.size)
-
+            
             const savingsText =
                 smaller
                     ? '⇩ ' + ((1 - relativeSize) * 100).toFixed(0) + '%'
@@ -332,7 +337,7 @@ function showSummary(
             return style(fileSizeText, classes) + '\n' + style(savingsText, classes)
         })
     ])
-
+    
     print([
         '\n',
         title,

@@ -19,14 +19,14 @@ export default async function app({ cwd, ready, reportError, showProgress, showS
     const ffmpegPromise  = findOrCreateTemporaryFolder().then(searchForFfmpeg)
     const allImages      = await searchForImages(projectDetails.srcDir).toArray()
     
-    const { selectedImages, widths, formats } =
+    const { selectedImages, widths, formats, placement } =
         await ready(allImages, structuredClone(constants.options))
     
     const ffmpeg = await ffmpegPromise
     
     if (unhappy(ffmpeg)) return reportError(ffmpeg)
 
-    const packagePath  = determinePackageDestination(projectDetails.rootDir, constants.options.placement)
+    const packagePath  = determinePackageDestination(projectDetails.rootDir, placement)
     const manifestPath = path.join(packagePath, 'manifest.ts')
     
     // TODO: investigate whether the codecs used are multi-threaded
@@ -36,7 +36,7 @@ export default async function app({ cwd, ready, reportError, showProgress, showS
         await concurrentMap(
             Math.max(1, Math.ceil(navigator.hardwareConcurrency / 2)),
             selectedImages,
-            sourcePath => processImage(ffmpeg, projectDetails, packagePath, sourcePath, widths, formats, 1, reportError, showProgress, showSummary)
+            sourcePath => processImage(ffmpeg, projectDetails, packagePath, sourcePath, widths, formats, selectedImages.length, reportError, showProgress, showSummary)
         )
     
     const optimizations = opts.filter(happy)
@@ -66,14 +66,14 @@ export interface AppOptions {
 }
 
 type ReadyArgs = [
-    images           : string[],
-    transcodeOptions : TranscodeOptions
+    images        : string[],
+    configuration : Configuration
 ]
 
 type ShowProgressArgs = [
-    sourcePath     : string,
-    progress       : ReadableStream<TranscodeProgress>,
-    remainingCount : number
+    sourcePath : string,
+    progress   : ReadableStream<TranscodeProgress>,
+    totalCount : number
 ]
 
 type ShowSummaryArgs = [
@@ -85,9 +85,10 @@ export interface OptimizationManifest {
     selectedImages : string[]
     widths         : Array<number>
     formats        : Array<FormatDetails>
+    placement      : Placement
 }
 
-export interface TranscodeOptions {
+export interface Configuration {
     formats : Record<Format, {
         enabled : boolean
         codec   : string
@@ -99,9 +100,15 @@ export interface TranscodeOptions {
         width   : number
         enabled : boolean
     }>
+    placement: {
+        selected: Placement
+        options : typeof constants.options.placement.options
+    }
 }
 
-interface ConfigFile {
+type Placement = typeof constants.options.placement.options[number]
+
+interface AstroConfigFile {
     path     : string
     contents : string
 }
@@ -161,7 +168,7 @@ async function processImage(
     sourcePath     : string,
     widths         : number[],
     formats        : Array<FormatDetails>,
-    remainingCount : number,
+    totalCount     : number,
     reportError    : AppOptions['reportError'],
     showProgress   : AppOptions['showProgress'],
     showSummary    : AppOptions['showSummary']
@@ -175,7 +182,7 @@ async function processImage(
         await reportError(sourceImage)
         return sourceImage
     }
-
+    
     const transcodeMatrix =
         createTranscodeMatrix(projectDetails, packagePath, sourceImage, widths, formats)
     
@@ -188,17 +195,17 @@ async function processImage(
         await showSummary(sourceImage, previouslyTranscoded)
         return { sourceImage, tasks: previouslyTranscoded } satisfies Optimization
     }
-
+    
     const { progress, couldntTranscodeImage } =
         optimizeImage(ffmpeg, sourceImage.path, requiredTranscodes)
     
-    await showProgress(sourcePath, progress, remainingCount)
+    await showProgress(sourcePath, progress, totalCount)
     
     // for type safety of the unhappy path,
     // this promise is fulfilled with an error,
     // and rejected with "ok".
     await couldntTranscodeImage.then(reportError).catch((happy: "ok") => happy)
-
+    
     const justTranscoded : TranscodeTask[] =
         await Promise.all(
             requiredTranscodes.map(async task => {
@@ -346,11 +353,11 @@ async function searchForProjectDetails(
     return {
         path    : configFilePath,
         contents: await Deno.readTextFile(configFilePath)
-    } satisfies ConfigFile
+    } satisfies AstroConfigFile
 }
 
 function parseProjectDetails(
-    config : ConfigFile
+    config : AstroConfigFile
 ) : ProjectDetails {
 
     const configRegex = /(srcDir(\s*):(\s*)["'`](?<srcDir>.*)["'`])|(outDir(\s*):(\s*)["'`](?<outDir>.*)["'`])|(publicDir(\s*):(\s*)["'`](?<publicDir>.*)["'`])/
@@ -369,7 +376,7 @@ function parseProjectDetails(
     return { rootDir, srcDir, outDir, publicDir } satisfies ProjectDetails
 }
 
-function determinePackageDestination(rootDir : string, placement : "in node_modules" | "in project root") {
+function determinePackageDestination(rootDir : string, placement : Placement) {
     if (placement === 'in node_modules')
         return path.join(rootDir, 'node_modules', constants.packageName)
     
@@ -549,7 +556,7 @@ function determineDestinationPath(
 ) {
     const relative = path.relative(projectDetails.rootDir, path.dirname(sourcePath))
     const fileName = `${path.basename(sourcePath, path.extname(sourcePath))}-${quality}q-${width}w.${format}`
-
+    
     return path.join(
         packagePath,
         constants.optimizedFolderName,
@@ -569,12 +576,12 @@ function searchForImages(
 
 async function findOrCreateTemporaryFolder() {
     const previouslyCreatedAt = localStorage.getItem('temporary folder')
-
+    
     if (
         previouslyCreatedAt !== null &&
         await fs.exists(previouslyCreatedAt, { isDirectory: true })
     ) return previouslyCreatedAt
-
+    
     const newTemporaryFolder = await Deno.makeTempDir({ prefix: constants.packageName })
     
     const previouslyUsed =
@@ -587,7 +594,7 @@ async function findOrCreateTemporaryFolder() {
         localStorage.setItem('temporary folder', newTemporaryFolder)
         return newTemporaryFolder
     }
-
+    
     else {
         localStorage.setItem('temporary folder', previouslyUsed.path)
         Deno.remove(newTemporaryFolder).catch(_ => _)
@@ -604,7 +611,7 @@ async function searchForFfmpeg(
         previouslyFoundAt !== null &&
         await fs.exists(previouslyFoundAt, { isFile: true })
     ) return previouslyFoundAt
-
+    
     else localStorage.removeItem('ffmpeg path')
     
     const suffix = Deno.build.os === 'windows' ? '.exe' : ''
@@ -651,10 +658,10 @@ async function downloadFfmpeg(
     }
     
     const ffmpegResponse = await fetch(url).catch(error => error as Error)
-
+    
     if (unhappy(ffmpegResponse))
         return new CantContinue.CouldntConnectToInternet(url, ffmpegResponse)
-
+    
     if (ffmpegResponse.ok === false)
         return new CantContinue.CouldntDownloadFfmpeg(url, ffmpegResponse)
     
@@ -711,13 +718,13 @@ async function concurrentMap<A, B>(
         // process another element on this thread
         return spawnThread()
     }
-
+    
     // kick off
     await Promise.all(
         // thread pool
         Array.from({ length: concurrency }).map(spawnThread)
     )
-
+    
     return result
 }
 

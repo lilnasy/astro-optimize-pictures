@@ -17,7 +17,10 @@ export default {
     },
     considerForOptimization : [ 'png', 'jpeg', 'jpg', 'avif', 'webp' ],
     options: {
-        placement: 'in node_modules' as 'in node_modules' | 'in project root',
+        placement: {
+            selected: 'in node_modules',
+            options: ['in node_modules', 'in project root']
+        },
         widths: [
             { width: 100 , enabled: true  },
             { width: 256 , enabled: false },
