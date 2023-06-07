@@ -267,8 +267,8 @@ async function writeManifestFile(
         
         const imageSrc =
             Deno.build.os === 'windows'
-                ? path.relative(projectDetails.srcDir, optimization.sourceImage.path).replaceAll('\\', '/')
-                : path.relative(projectDetails.srcDir, optimization.sourceImage.path)
+                ? path.relative(projectDetails.rootDir, optimization.sourceImage.path).replaceAll('\\', '/')
+                : path.relative(projectDetails.rootDir, optimization.sourceImage.path)
         
         manifest[imageSrc] ??= {
             meta: {
