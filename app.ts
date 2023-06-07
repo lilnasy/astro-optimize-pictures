@@ -43,12 +43,13 @@ export default async function app({ cwd, ready, reportError, showProgress, showS
     
     await writeManifestFile(projectDetails, packagePath, optimizations, manifestPath)
     await Promise.all([
-        download(import.meta.resolve('./package/index.ts'      ), path.join(packagePath, 'index.ts')),
-        download(import.meta.resolve('./package/Image.astro'   ), path.join(packagePath, 'Image.astro')),
-        download(import.meta.resolve('./package/Picture.astro' ), path.join(packagePath, 'Picture.astro')),
-        download(import.meta.resolve('./package/get-image.ts'  ), path.join(packagePath, 'get-image.ts')),
-        download(import.meta.resolve('./package/get-picture.ts'), path.join(packagePath, 'get-picture.ts')),
-        download(import.meta.resolve('./package/package.json'  ), path.join(packagePath, 'package.json'))
+        download(import.meta.resolve('./package/index.ts'         ), path.join(packagePath, 'index.ts')),
+        download(import.meta.resolve('./package/Image.astro'      ), path.join(packagePath, 'Image.astro')),
+        download(import.meta.resolve('./package/Picture.astro'    ), path.join(packagePath, 'Picture.astro')),
+        download(import.meta.resolve('./package/get-image.ts'     ), path.join(packagePath, 'get-image.ts')),
+        download(import.meta.resolve('./package/get-picture.ts'   ), path.join(packagePath, 'get-picture.ts')),
+        download(import.meta.resolve('./package/get-resolution.ts'), path.join(packagePath, 'get-resolution.ts')),
+        download(import.meta.resolve('./package/package.json'     ), path.join(packagePath, 'package.json'))
     ])
     
     // TODO happy exit message
