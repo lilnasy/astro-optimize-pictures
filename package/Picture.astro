@@ -16,7 +16,7 @@ interface Props<
     formats         ?: Array<Format>
     widths          ?: Array<keyof Manifest[ImageSrc][Format]>
     pictureClass    ?: string
-    withplaceholder ?: '' | true
+    withplaceholder ?: true
 }
 
 const {
@@ -37,9 +37,9 @@ const resolution = getResolution(manifest, src)
 const placeholder =
     withplaceholder
         ? {
-            style: `background-image: url(${getImage(manifest, { src, type: 'preview' })}); background-size: cover; image-rendering:auto;`
-        }
-        : {}
+            style: `background-image: url(${getImage(manifest, { src, type: 'preview' })}); background-size: cover; image-rendering:auto;`,
+            onload: `this.removeAttribute('style');`
+        } : {}
 ---
 <picture class={ pictureClass }>
 	{ sources.map(srcAttrs => <source { ...srcAttrs }/>) }

@@ -14,7 +14,7 @@ interface Props<
     src              : ImageSrc
     format          ?: Format
     width           ?: keyof Manifest[ImageSrc][Format]
-    withplaceholder ?: '' | true
+    withplaceholder ?: true
 }
 
 const {
@@ -32,7 +32,9 @@ const resolution = getResolution(manifest, src)
 
 const placeholder =
     withplaceholder
-        ? { style: `background-image: url(${getImage(manifest, { src, type: 'preview' })}); background-size: cover; image-rendering:auto;` }
-        : {}
+        ? {
+            style: `background-image: url(${getImage(manifest, { src, type: 'preview' })}); background-size: cover; image-rendering:auto;`,
+            onload: `this.removeAttribute('style');`
+        } : {}
 ---
 <img src={ hostedUrl } { ...resolution } { loading } { decoding } { ...placeholder } { ...rest }/>
