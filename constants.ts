@@ -22,7 +22,7 @@ export default {
             options: ['in node_modules', 'in project root']
         },
         widths: [
-            { width: 100 , enabled: true  },
+            { width: 100 , enabled: false },
             { width: 256 , enabled: false },
             { width: 320 , enabled: true  },
             { width: 426 , enabled: false },
