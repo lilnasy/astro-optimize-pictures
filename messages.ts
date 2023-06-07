@@ -127,10 +127,10 @@ const messages = {
     "InteractionInstructions": {
         
         "en-US":
-            "Controls:\nUp and down keys to move the selection\nSpace to add or remove the selected folder or image\nEnter to continue",
+            "Controls:\nUp, down, left, and right arrow keys to move around\nSpace to select or deselect the highlighted option\nEnter to continue",
         
         "fr-FR":
-            "Contrôles:\nTouches haut et bas pour déplacer la sélection\nEspace pour ajouter ou supprimer le dossier ou l'image sélectionné\nEntrée pour continuer"
+            "Contrôles:\nFlèches haut, bas, gauche et droite pour se déplacer\nEspace pour sélectionner ou désélectionner l'option surlignée\nEntrée pour continuer"
         
     },
     "NoteAboutWidths": {

@@ -38,9 +38,9 @@ const box = {
 const style = styler()
 
 function styler() {
-
+    
     type Style = typeof styles[number]
-
+    
     type Classes =
         | Style[]
         | { [_ in Style] ?: boolean }
@@ -55,7 +55,7 @@ function styler() {
     const id = (x => x) as Styler
     
     let stylesToApply = new Array<Style>
-
+    
     return new Proxy(id, {
         get(_, property : Style, receiver) {
             if (styles.includes(property)) stylesToApply.push(property)
@@ -67,7 +67,7 @@ function styler() {
                     if (styles.includes(c))
                         stylesToApply.push(c)
                 })
-
+            
             else if (typeof classes === 'object')
                 Object.keys(classes).forEach(key => {
                     if (classes[key as Style] && styles.includes(key as Style))
@@ -122,12 +122,12 @@ function renderFsTreeFromPaths(
         const siblings = Tree.children(parent)
         const lastInFolder = value === siblings.at(-1)
         let structure = ''
-
+        
         if (Tree.isNode(value)) {
             key += ' (' + Tree.leaves(value).size + ')'
         }
         else if (siblings.filter(Tree.isLeaf).length > 2) return
-
+        
         ancestors.reverse().forEach((node, i) => {
             const parent = ancestors[i-1]
             if (parent === undefined) return
@@ -141,7 +141,7 @@ function renderFsTreeFromPaths(
             if (lastInFolder) structure += '└───'
             else              structure += '├───'
         }
-
+        
         output += structure + ' ' + key + ' ' + '\n'
     })
     return output
@@ -165,7 +165,7 @@ async function selectOneOf(
     clear()
     showCursor()
     return selected
-
+    
     function render(_?: unknown) {
         let output = '\n'
         options.forEach((option, i) => {
@@ -184,7 +184,7 @@ async function selectMultipleOf(
 ) : Promise<Array<boolean>> {
     const selected = preselected
     let focused = 0
-
+    
     hideCursor()
     render()
     await onKeyPress({
@@ -195,7 +195,7 @@ async function selectMultipleOf(
     clear()
     showCursor()
     return selected
-
+    
     function render(_?: unknown) {
         clear()
         let output = '\n'
@@ -213,7 +213,6 @@ async function selectMultipleOf(
         preview([ prompt, output ])
     }
 }
-
 
 async function selectPaths(
     prompt : string,
@@ -251,7 +250,7 @@ async function selectPaths(
                 const next = nextOutwards(focused)
                 if (next !== undefined) return render(focused = next)
             }
-
+            
             function nextOutwards(
                 current : typeof focused
             ) : typeof focused | undefined {
@@ -301,7 +300,7 @@ async function selectPaths(
     clear()
     showCursor()
     return selected
-
+    
     function render(_?: unknown) {
         clear()
         let output = '\n'
@@ -311,7 +310,7 @@ async function selectPaths(
             const siblings = Tree.children(parent)
             const lastInFolder = value === siblings.at(-1)
             let structure = ''
-    
+            
             ancestors.reverse().forEach((node, i) => {
                 const parent = ancestors[i - 1]
                 if (parent === undefined) return
@@ -325,21 +324,21 @@ async function selectPaths(
                 if (lastInFolder) structure += '└─'
                 else              structure += '├─'
             }
-
+            
             const openStatus = Tree.isLeaf(value) ? '──' : openNodes.has(value) ? '▼ ' : '▷ '
             const selectionStatus =
                 Tree.isLeaf(value) ? selected[value]                         ? '☑' : '☐' :
                 Array.from(Tree.leaves(value)).every(leaf => selected[leaf]) ? '☑' :
                 Array.from(Tree.leaves(value)).some(leaf => selected[leaf])  ? '⊟' : '☐'
-
+            
             const isSelected = Tree.isLeaf(value) ? selected[value] : Array.from(Tree.leaves(value)).every(leaf => selected[leaf])
-
+            
             const classes = {
                 dim          : !isSelected && focused !== value,
                 inverse      : focused === value,
                 strikethrough: !isSelected,
             }
-
+            
             const entryName = style(key, classes)
             output += structure + openStatus + selectionStatus + ' ' + entryName + '\n'
         })
@@ -352,19 +351,19 @@ async function selectOptions(
     prompt  : string,
     options : Configuration
 ) : Promise<Configuration> {
-
+    
     let focusedSection : 'placement' | 'widths' | 'formats' | 'qualities'
     let focusedWidth   = 0
-    let focusedFormat  : keyof typeof options.formats = 'jpeg'
-    let focusedQuality : keyof typeof options.formats = 'jpeg'
-
+    let focusedFormat  : keyof typeof options.formats = 'avif'
+    let focusedQuality : keyof typeof options.formats = 'avif'
+    
     hideCursor()
     render()
     await selectWidths()
     clear()
     showCursor()
     return options
-
+    
     function selectPlacement(): Promise<unknown> {
         render(focusedSection = 'placement')
         return onKeyPress({
@@ -373,7 +372,7 @@ async function selectOptions(
             down : selectWidths
         })
     }
-
+    
     function selectWidths(): Promise<unknown> {
         render(focusedSection = 'widths')
         return onKeyPress({
@@ -385,25 +384,25 @@ async function selectOptions(
             delete: () => render(options.widths[focusedWidth].enabled = false),
         })
     }
-
+    
     function selectFormats(): Promise<unknown> {
         render(focusedSection = 'formats')
         return onKeyPress({
             up    : selectWidths,
-            left  : () => render(focusedFormat = focusedFormat === 'avif' ? 'webp' : 'jpeg'),
-            right : () => render(focusedFormat = focusedFormat === 'jpeg' ? 'webp' : 'avif'),
+            left  : () => render(focusedFormat = focusedFormat === 'jpeg' ? 'webp' : 'avif'),
+            right : () => render(focusedFormat = focusedFormat === 'avif' ? 'webp' : 'jpeg'),
             down  : selectQualities,
             space : () => render(toggle(options.formats[focusedFormat], 'enabled')),
             delete: () => render(options.formats[focusedFormat].enabled = false)
         })
     }
-
+    
     function selectQualities(): Promise<unknown> {
         render(focusedSection = 'qualities')
         return onKeyPress({
             up: () => {
-                if (focusedQuality === 'jpeg') return selectFormats()
-                else return render(focusedQuality = focusedQuality === 'avif' ? 'webp' : 'jpeg')
+                if (focusedQuality === 'avif') return selectFormats()
+                else return render(focusedQuality = focusedQuality === 'jpeg' ? 'webp' : 'avif')
             },
             left: () => {
                 const { quality, minimum } = options.formats[focusedQuality]
@@ -416,28 +415,28 @@ async function selectOptions(
                 return render(options.formats[focusedQuality].quality = newQuality)
             },
             down: () => {
-                if (focusedQuality === 'avif') return
-                else return render(focusedQuality = focusedQuality === 'jpeg' ? 'webp' : 'avif')
+                if (focusedQuality === 'jpeg') return
+                else return render(focusedQuality = focusedQuality === 'avif' ? 'webp' : 'jpeg')
             },
         })
     }
-
+    
     function render(_?: unknown) {
         clear()
         let output = '\n'
-
+        
         const placementTitle = (focusedSection === 'placement' ? style.bold.underline : style.bold)('placement')
         const placementBody = options.placement.options.map(placementOption => {
             const selected = placementOption === options.placement.selected
             const classes = {
                 dim          : !selected && focusedSection !== 'placement',
                 strikethrough: !selected,
-                inverse      : selected
+                inverse      : selected && focusedSection === 'placement'
             }
             return (selected ? '✓ ' : '✗ ') + style(placementOption, classes)
         })
         output += placementTitle + '\n    ' + placementBody.join('    ') + '\n\n'
-
+        
         const widthsTitle = (focusedSection === 'widths'  ? style.bold.underline : style.bold)('widths')
         const widthsBody = options.widths.map(({ width , enabled }, i) => {
             const classes = {
@@ -448,7 +447,7 @@ async function selectOptions(
             return (enabled ? '✓ ' : '✗ ') + style(String(width).padEnd(4), classes)
         })
         output += widthsTitle + '\n    ' + widthsBody.join('    ') + '\n\n'
-
+        
         const formatsTitle = (focusedSection === 'formats' ? style.bold.underline : style.bold)('formats')
         const formatsBody  = Object.keys(options.formats).map(format_ => {
             const format  = format_ as keyof typeof options.formats
@@ -469,7 +468,7 @@ async function selectOptions(
             const focusedOnFormat = focusedSection === 'qualities' && focusedQuality === format
             const qualityTitle = (focusedOnFormat ? style.underline : style)(format)
             const qualityText  = (focusedOnFormat ? style.inverse   : style)(String(quality))
-
+            
             const qualityControls =
                 focusedOnFormat === false
                     ? '   ' + qualityText
@@ -487,7 +486,7 @@ async function selectOptions(
             return style(qualityTitle + ' ' + qualityControls, classes)
         })
         output += qualitiesTitle + '\n    ' + qualitiesBody.join('\n    ') + '\n\n'
-
+        
         preview([ prompt, output ])
     }
 }
@@ -632,7 +631,7 @@ function splitAtMaxWidth(
         const [ firstLine, ...rest ] = input.split('\n')
         return splitAtMaxWidth(rest.join('\n'), maxWidth, [ ...chunks, ...splitAtMaxWidth(firstLine, maxWidth) ])
     }
-
+    
     if (style.stripColor(input).length <= maxWidth)
         return [ ...chunks, input ]
     
